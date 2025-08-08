@@ -1,0 +1,24 @@
+{
+  "experiment_name": "baseline_mlp_reverse",
+  "model": {
+    "name": "mlp",
+    "params": {
+      "input_size": 64,
+      "hidden_size": 128,
+      "output_size": 64
+    }
+  },
+  "dataset": {
+    "name": "reverse",
+    "params": {
+      "seq_len": 64,
+      "train_size": 1000,
+      "test_size": 200
+    }
+  },
+  "training": {
+    "epochs": 3,
+    "batch_size": 32,
+    "learning_rate": 0.001
+  }
+}

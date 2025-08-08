@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: hrem_evaluation
+Version: 0.1.0
+Summary: An evaluation framework for HREM models.
+Classifier: Programming Language :: Python :: 3
+Requires-Python: >=3.8

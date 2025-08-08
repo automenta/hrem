@@ -1,0 +1,9 @@
+{
+  "experiment_name": "test_experiment",
+  "training": {
+    "batch_size": 4,
+    "epochs": 1,
+    "learning_rate": 0.001,
+    "loss": "bce"
+  }
+}
