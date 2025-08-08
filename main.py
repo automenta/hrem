@@ -1,7 +1,7 @@
 import argparse
 import json
 from src.models import MLP, HRM, HREM
-from src.datasets import ReverseDataset, TinyShakespeareDataset
+from src.datasets import ReverseDataset, TinyShakespeareDataset, CopyTaskDataset, AssociativeRecallDataset
 from src.training import Trainer
 
 def main(config_path):
@@ -33,6 +33,12 @@ def main(config_path):
     elif dataset_name == 'tiny_shakespeare':
         train_ds = TinyShakespeareDataset(dataset_params['seq_length'], split='train')
         test_ds = TinyShakespeareDataset(dataset_params['seq_length'], split='test')
+    elif dataset_name == 'copy':
+        train_ds = CopyTaskDataset(size=dataset_params['train_size'], seq_len=dataset_params['seq_len'], vec_len=dataset_params['vec_len'])
+        test_ds = CopyTaskDataset(size=dataset_params['test_size'], seq_len=dataset_params['seq_len'], vec_len=dataset_params['vec_len'])
+    elif dataset_name == 'associative_recall':
+        train_ds = AssociativeRecallDataset(size=dataset_params['train_size'], item_range=tuple(dataset_params['item_range']), vec_len=dataset_params['vec_len'])
+        test_ds = AssociativeRecallDataset(size=dataset_params['test_size'], item_range=tuple(dataset_params['item_range']), vec_len=dataset_params['vec_len'])
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
 

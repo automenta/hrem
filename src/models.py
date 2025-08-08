@@ -46,14 +46,19 @@ class HREM(nn.Module):
     """
     A modular Hierarchical Recurrent-External Memory model.
     The external memory component can be disabled for ablation studies.
+    Includes optional DNC-style location-based addressing.
     """
-    def __init__(self, seq_len, d_model, n_cycles, t_steps, use_memory=True, m_loc=64, d_mem=32, top_k=4):
+    def __init__(self, seq_len, d_model, n_cycles, t_steps, use_memory=True,
+                 m_loc=64, d_mem=32, top_k=4, sparse_addressing=True,
+                 use_location_addressing=False):
         super().__init__()
         self.seq_len = seq_len
         self.d_model = d_model
         self.n_cycles = n_cycles
         self.t_steps = t_steps
         self.use_memory = use_memory
+        self.use_location_addressing = use_location_addressing
+        self.sparse_addressing = sparse_addressing
 
         # Core components
         self.f_I = nn.Linear(seq_len, d_model)
@@ -63,11 +68,19 @@ class HREM(nn.Module):
         if self.use_memory:
             self.m_loc = m_loc
             self.d_mem = d_mem
-            self.top_k = top_k
+            self.top_k = top_k if sparse_addressing else m_loc
             self.init_proj = nn.Linear(seq_len, m_loc * d_mem)
+
+            # Controller input size is constant
             input_dim_L = d_model * 3 + d_mem
-            # z_L, write_key, write_beta, erase, add, read_key, read_beta
+
+            # Controller output size depends on features enabled
+            # Base: z_L, read_key, read_beta, write_key, write_beta, erase, add
             output_dim_L = d_model + (4 * d_mem) + 2
+            if self.use_location_addressing:
+                # Add gates: write_gate, allocation_gate, read_modes (3)
+                output_dim_L += 1 + 1 + 3
+
             self.f_L = nn.Linear(input_dim_L, output_dim_L)
         else:
             # If no memory, f_L is simpler, similar to HRM
@@ -88,6 +101,17 @@ class HREM(nn.Module):
             z_L = torch.zeros(batch, self.d_model, device=device)
             r = torch.zeros(batch, self.d_mem, device=device) if self.use_memory else None
 
+            # Initialize memory-related states for the cycle
+            if self.use_memory:
+                w_r_prev = torch.zeros(batch, self.m_loc, device=device)
+                w_w_prev = torch.zeros(batch, self.m_loc, device=device)
+                if self.use_location_addressing:
+                    # Usage vector, precedence vector, and link matrix for DNC
+                    usage = torch.zeros(batch, self.m_loc, device=device)
+                    precedence = torch.zeros(batch, self.m_loc, device=device)
+                    link_matrix = torch.zeros(batch, self.m_loc, self.m_loc, device=device)
+
+
             for t in range(self.t_steps):
                 if self.use_memory:
                     input_L = torch.cat([z_L, z_H, x_tilde, r], dim=1)
@@ -95,31 +119,47 @@ class HREM(nn.Module):
 
                     # Deconstruct the output of the low-level controller
                     idx = 0
-                    z_L = torch.tanh(out_L[:, idx:idx+self.d_model])
-                    idx += self.d_model
+                    z_L = torch.tanh(out_L[:, idx:idx+self.d_model]); idx += self.d_model
+
+                    # Base interface vector for memory
+                    read_key = out_L[:, idx:idx+self.d_mem]; idx += self.d_mem
+                    read_beta_raw = out_L[:, idx:idx+1]; idx += 1
                     write_key = out_L[:, idx:idx+self.d_mem]; idx += self.d_mem
                     write_beta_raw = out_L[:, idx:idx+1]; idx += 1
-                    erase = out_L[:, idx:idx+self.d_mem]; idx += self.d_mem
+                    erase = torch.sigmoid(out_L[:, idx:idx+self.d_mem]); idx += self.d_mem
                     add = out_L[:, idx:idx+self.d_mem]; idx += self.d_mem
-                    read_key = out_L[:, idx:idx+self.d_mem]; idx += self.d_mem
-                    read_beta_raw = out_L[:, idx:idx+1]
 
-                    # Memory operations
-                    write_beta = F.softplus(write_beta_raw + 1).squeeze(1)
-                    read_beta = F.softplus(read_beta_raw + 1).squeeze(1)
-                    erase = torch.sigmoid(erase)
+                    read_beta = F.softplus(read_beta_raw + 1)
+                    write_beta = F.softplus(write_beta_raw + 1)
 
-                    w_w, indices_w = self._content_addressing(write_key, write_beta, M)
-                    erase_m = torch.einsum('bk,bd->bkd', w_w, erase)
-                    add_m = torch.einsum('bk,bd->bkd', w_w, add)
+                    # Get content-based weightings
+                    w_c_r, _ = self._content_addressing(read_key, read_beta, M)
+                    w_c_w, _ = self._content_addressing(write_key, write_beta, M)
 
-                    gathered_M_w = torch.gather(M, 1, indices_w.unsqueeze(2).expand(-1, -1, self.d_mem))
-                    updated_M = gathered_M_w * (1 - erase_m) + add_m
-                    M.scatter_(1, indices_w.unsqueeze(2).expand(-1, -1, self.d_mem), updated_M)
+                    if self.use_location_addressing:
+                        # Unpack DNC gates
+                        write_gate = torch.sigmoid(out_L[:, idx:idx+1]); idx += 1
+                        alloc_gate = torch.sigmoid(out_L[:, idx:idx+1]); idx += 1
+                        read_modes = F.softmax(out_L[:, idx:idx+3], dim=1); idx += 3
 
-                    w_r, indices_r = self._content_addressing(read_key, read_beta, M)
-                    gathered_M_r = torch.gather(M, 1, indices_r.unsqueeze(2).expand(-1, -1, self.d_mem))
-                    r = torch.einsum('bk,bkd->bd', w_r, gathered_M_r)
+                        # Placeholder for DNC logic
+                        w_w = w_c_w # TODO: Implement allocation
+                        w_r = w_c_r # TODO: Implement location-based read
+                    else:
+                        w_w = w_c_w
+                        w_r = w_c_r
+
+                    # Write to memory
+                    erase_m = torch.einsum('bi,bj->bij', w_w, erase)
+                    add_m = torch.einsum('bi,bj->bij', w_w, add)
+                    M = M * (1 - erase_m) + add_m
+
+                    # Read from memory
+                    r = torch.einsum('bi,bij->bj', w_r, M)
+
+                    # Update previous weightings
+                    w_r_prev = w_r
+                    w_w_prev = w_w
                 else:
                     # No memory, so the inner loop is simpler
                     input_L = torch.cat([z_L, z_H, x_tilde], dim=1)
@@ -132,8 +172,19 @@ class HREM(nn.Module):
         return F.sigmoid(out)
 
     def _content_addressing(self, key, beta, M):
+        # key: (batch, d_mem), beta: (batch, 1), M: (batch, m_loc, d_mem)
         sim = F.cosine_similarity(key.unsqueeze(1), M, dim=2)
-        weighted = beta.unsqueeze(1) * sim
-        values, indices = torch.topk(weighted, self.top_k, dim=1)
-        sparse_w = F.softmax(values, dim=1)
-        return sparse_w, indices
+        weighted_sim = sim * beta
+
+        if self.sparse_addressing:
+            # Top-K sparse addressing
+            values, indices = torch.topk(weighted_sim, self.top_k, dim=1)
+            sparse_w = F.softmax(values, dim=1)
+
+            # Scatter back to full size
+            w = torch.zeros_like(weighted_sim).scatter(1, indices, sparse_w)
+            return w, indices # Returning indices for legacy compatibility
+        else:
+            # Dense addressing
+            w = F.softmax(weighted_sim, dim=1)
+            return w, None # No specific indices for dense

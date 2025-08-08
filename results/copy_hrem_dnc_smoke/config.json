@@ -1,0 +1,30 @@
+{
+  "experiment_name": "copy_hrem_dnc_smoke",
+  "model": {
+    "name": "hrem",
+    "params": {
+      "seq_len": 168,
+      "d_model": 32,
+      "n_cycles": 1,
+      "t_steps": 5,
+      "use_memory": true,
+      "m_loc": 16,
+      "d_mem": 8,
+      "use_location_addressing": true
+    }
+  },
+  "dataset": {
+    "name": "copy",
+    "params": {
+      "seq_len": 10,
+      "vec_len": 8,
+      "train_size": 10,
+      "test_size": 10
+    }
+  },
+  "training": {
+    "epochs": 1,
+    "batch_size": 4,
+    "learning_rate": 0.001
+  }
+}

@@ -76,3 +76,78 @@ No more talking; let's do't: away, away!
         x = torch.tensor(chunk[:-1], dtype=torch.long)
         y = torch.tensor(chunk[1:], dtype=torch.long)
         return x, y
+
+class CopyTaskDataset(Dataset):
+    """
+    A dataset for the copy task.
+    The model receives a flattened sequence of vectors and must reconstruct
+    the flattened output sequence.
+    """
+    def __init__(self, size, seq_len=10, vec_len=8):
+        self.size = size
+        self.seq_len = seq_len
+        self.vec_len = vec_len
+        self.data = (torch.rand(size, seq_len, vec_len) < 0.5).float()
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, idx):
+        total_len = 2 * self.seq_len + 1
+        x = torch.zeros(total_len, self.vec_len)
+        y = torch.zeros(total_len, self.vec_len)
+
+        x[0:self.seq_len, :] = self.data[idx]
+        x[self.seq_len, -1] = 1.0 # Delimiter
+        y[self.seq_len+1:, :] = self.data[idx]
+
+        # The model expects a single flattened vector
+        return x.view(-1), y.view(-1)
+
+class AssociativeRecallDataset(Dataset):
+    """
+    A dataset for the associative recall task.
+    The model receives a flattened sequence and must reconstruct the flattened output.
+    Sequences are padded to a fixed length.
+    """
+    def __init__(self, size, item_range=(3, 6), vec_len=8):
+        self.size = size
+        self.item_range = item_range
+        self.max_items = item_range[1]
+        self.data_len = vec_len - 2 # 2 bits are for markers
+        assert self.data_len > 0, "vec_len must be > 2"
+
+        self.data = []
+        for _ in range(size):
+            num_items = torch.randint(item_range[0], item_range[1] + 1, (1,)).item()
+            items = (torch.rand(num_items, self.data_len) < 0.5).float()
+            self.data.append(items)
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, idx):
+        items = self.data[idx]
+        num_items = items.shape[0]
+        vec_len = self.data_len + 2
+
+        # Pad sequences to max length for batching
+        max_seq_len = self.max_items + 2
+        x = torch.zeros(max_seq_len, vec_len)
+        y = torch.zeros(max_seq_len, vec_len)
+
+        item_vectors = torch.cat([items, torch.ones(num_items, 1), torch.zeros(num_items, 1)], dim=1)
+        x[:num_items] = item_vectors
+
+        delimiter = torch.zeros(1, vec_len)
+        delimiter[0, -1] = 1.0
+        x[num_items] = delimiter
+
+        query_idx = torch.randint(0, num_items - 1, (1,)).item()
+        query_vec = item_vectors[query_idx]
+        answer_vec = item_vectors[query_idx + 1]
+
+        x[num_items + 1] = query_vec
+        y[num_items + 1] = answer_vec
+
+        return x.view(-1), y.view(-1)
