@@ -8,6 +8,7 @@ from .hrm import HierarchicalReasoningModel_ACTV1
 
 from .lstm import LSTM
 from .rnn import RNN
+from .transformer import Transformer
 
 # Rename for consistency with the project's naming conventions (e.g. HREM)
 HRM = HierarchicalReasoningModel_ACTV1

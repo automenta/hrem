@@ -11,7 +11,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
 # Find all non-smoke test config files and run the experiment for each.
-find "$PROJECT_ROOT/configs" -type f -name '*.json' ! -name '*_smoke.json' | while read config; do
+find "$PROJECT_ROOT/configs" -type f -name '*.json' ! -name '*_smoke.json' ! -name 'default.json' | while read config; do
   echo "Running full experiment with config: $config"
   # Run main.py from the project root
   python "$PROJECT_ROOT/main.py" "$config"

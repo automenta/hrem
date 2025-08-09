@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from src.models import MLP, HRM, HREM, LSTM, RNN
+from src.models import MLP, HRM, HREM, LSTM, RNN, Transformer
 from src.datasets import (
     ReverseDataset,
     TinyShakespeareDataset,
@@ -10,7 +10,7 @@ from src.datasets import (
 )
 
 # Registry for models
-MODEL_REGISTRY = {"mlp": MLP, "hrm": HRM, "hrem": HREM, "lstm": LSTM, "rnn": RNN}
+MODEL_REGISTRY = {"mlp": MLP, "hrm": HRM, "hrem": HREM, "lstm": LSTM, "rnn": RNN, "transformer": Transformer}
 
 # Registry for datasets
 DATASET_REGISTRY = {
@@ -113,6 +113,11 @@ def get_model(config: dict):
     elif model_name in ["hrm", "hrem"]:
         model = model_class(config_dict=model_params)
     elif model_name in ["lstm", "rnn"]:
+        model = model_class(**model_params)
+    elif model_name == "transformer":
+        dataset_name = config["dataset"]["name"]
+        if dataset_name in ["copy", "associative_recall"]:
+            model_params["output_size"] = config["dataset"]["params"]["vec_len"]
         model = model_class(**model_params)
     else:
         model = model_class(**model_params)

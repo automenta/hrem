@@ -1,0 +1,48 @@
+{
+  "extends": "default.json",
+  "experiment_name": "copy_transformer_search",
+  "model": {
+    "name": "transformer",
+    "params": {}
+  },
+  "dataset": {
+    "name": "copy",
+    "params": {
+      "seq_len": 10,
+      "vec_len": 8,
+      "train_size": 1000,
+      "test_size": 200
+    }
+  },
+  "training": {
+    "epochs": 5
+  },
+  "search": {
+    "direction": "minimize",
+    "metric": "test_loss",
+    "n_trials": 20,
+    "params": {
+      "training.learning_rate": {
+        "type": "float",
+        "args": [1e-5, 1e-3],
+        "kwargs": {"log": true}
+      },
+      "model.params.hidden_size": {
+        "type": "categorical",
+        "args": [[64, 128, 256]]
+      },
+      "model.params.num_layers": {
+        "type": "int",
+        "args": [1, 4]
+      },
+      "model.params.num_heads": {
+        "type": "categorical",
+        "args": [[2, 4, 8]]
+      },
+      "model.params.dropout": {
+        "type": "float",
+        "args": [0.1, 0.3]
+      }
+    }
+  }
+}

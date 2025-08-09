@@ -101,8 +101,9 @@ class Trainer:
 
             if test_loss < self.early_stopping_best_loss:
                 self.early_stopping_best_loss = test_loss
-                print(f"New best model saved with loss: {test_loss:.4f}")
-                torch.save(self.model.state_dict(), os.path.join(self.results_dir, 'best_model.pt'))
+                if self.training_params.get('checkpointing', False):
+                    print(f"New best model saved with loss: {test_loss:.4f}")
+                    torch.save(self.model.state_dict(), os.path.join(self.results_dir, 'best_model.pt'))
                 self.early_stopping_counter = 0
             else:
                 self.early_stopping_counter += 1

@@ -1,0 +1,25 @@
+{
+  "extends": "default.json",
+  "experiment_name": "copy_transformer",
+  "model": {
+    "name": "transformer",
+    "params": {
+      "hidden_size": 128,
+      "num_layers": 2,
+      "num_heads": 4,
+      "dropout": 0.1
+    }
+  },
+  "dataset": {
+    "name": "copy",
+    "params": {
+      "seq_len": 10,
+      "vec_len": 8,
+      "train_size": 2000,
+      "test_size": 500
+    }
+  },
+  "training": {
+    "epochs": 5
+  }
+}
