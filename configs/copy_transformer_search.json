@@ -3,7 +3,12 @@
   "experiment_name": "copy_transformer_search",
   "model": {
     "name": "transformer",
-    "params": {}
+    "params": {
+      "hidden_size": 128,
+      "num_layers": 2,
+      "num_heads": 4,
+      "dropout": 0.1
+    }
   },
   "dataset": {
     "name": "copy",

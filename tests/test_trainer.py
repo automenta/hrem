@@ -43,13 +43,14 @@ def trainer_setup():
         "training": {
             "batch_size": 4,
             "epochs": 1,
-            "learning_rate": 0.001
+            "learning_rate": 0.001,
+            "checkpointing": True
         }
     }
     trainer = Trainer(model, train_ds, test_ds, config)
     yield trainer
     # Teardown: clean up created files
-    results_dir = trainer.results_dir
+    results_dir = trainer.logger.results_dir
     if os.path.exists(results_dir):
         for f in os.listdir(results_dir):
             os.remove(os.path.join(results_dir, f))
@@ -83,6 +84,7 @@ def test_trainer_run(trainer_setup):
     trainer = trainer_setup
     trainer.run()
     # Check if results files were created
-    assert os.path.exists(os.path.join(trainer.results_dir, 'config.json'))
-    assert os.path.exists(os.path.join(trainer.results_dir, 'results.json'))
-    assert os.path.exists(os.path.join(trainer.results_dir, 'best_model.pt'))
+    results_dir = trainer.logger.results_dir
+    assert os.path.exists(os.path.join(results_dir, 'config.json'))
+    assert os.path.exists(os.path.join(results_dir, 'results.json'))
+    assert os.path.exists(os.path.join(results_dir, 'best_model.pt'))

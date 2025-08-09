@@ -3,10 +3,13 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import os
-import json
 from tqdm import tqdm
 import numpy as np
+import optuna
+
 from src.models import HRM, HREM
+from src.logger import TrainingLogger
+
 
 class Trainer:
     """
@@ -14,7 +17,6 @@ class Trainer:
     """
     def __init__(self, model, train_dataset, test_dataset, config):
         self.config = config
-        self.experiment_name = config['experiment_name']
         self.training_params = config.get('training', {})
 
         # Device configuration
@@ -47,6 +49,7 @@ class Trainer:
         )
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.training_params.get('learning_rate', 0.001))
+        self.logger = TrainingLogger(config)
 
         # Learning Rate Scheduler
         self.lr_scheduler_params = self.training_params.get('lr_scheduler', {})
@@ -75,13 +78,7 @@ class Trainer:
         else:
             self.criterion = torch.nn.MSELoss()
 
-        self.results_dir = f"results/{self.experiment_name}"
-        os.makedirs(self.results_dir, exist_ok=True)
-        with open(os.path.join(self.results_dir, 'config.json'), 'w') as f:
-            json.dump(config, f, indent=2)
-
-    def run(self):
-        results = {'train_loss': [], 'test_loss': []}
+    def run(self, trial=None):
         epochs = self.training_params.get('epochs', 10)
 
         for epoch in range(epochs):
@@ -91,10 +88,12 @@ class Trainer:
             train_loss = self._train_epoch(pbar)
             test_loss = self._evaluate()
 
-            print(f"Epoch {epoch+1}: Train Loss = {train_loss:.4f}, Test Loss = {test_loss:.4f}")
+            self.logger.log({'train_loss': train_loss, 'test_loss': test_loss}, step=epoch)
 
-            results['train_loss'].append(train_loss)
-            results['test_loss'].append(test_loss)
+            if trial:
+                trial.report(test_loss, epoch)
+                if trial.should_prune():
+                    raise optuna.exceptions.TrialPruned()
 
             if self.lr_scheduler:
                 self.lr_scheduler.step(test_loss)
@@ -103,7 +102,7 @@ class Trainer:
                 self.early_stopping_best_loss = test_loss
                 if self.training_params.get('checkpointing', False):
                     print(f"New best model saved with loss: {test_loss:.4f}")
-                    torch.save(self.model.state_dict(), os.path.join(self.results_dir, 'best_model.pt'))
+                    torch.save(self.model.state_dict(), os.path.join(self.logger.results_dir, 'best_model.pt'))
                 self.early_stopping_counter = 0
             else:
                 self.early_stopping_counter += 1
@@ -113,10 +112,8 @@ class Trainer:
                     print(f"Early stopping triggered after {epoch+1} epochs.")
                     break
 
-        with open(os.path.join(self.results_dir, 'results.json'), 'w') as f:
-            json.dump(results, f, indent=2)
-
-        return results
+        self.logger.save_results()
+        return self.logger.get_final_metrics()
 
     def _train_epoch(self, pbar):
         self.model.train()

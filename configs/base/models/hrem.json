@@ -1,0 +1,24 @@
+{
+  "model": {
+    "name": "hrem",
+    "params": {
+      "use_memory": true,
+      "H_layers": 2,
+      "L_layers": 2,
+      "H_cycles": 2,
+      "L_cycles": 2,
+      "halt_max_steps": 30,
+      "num_puzzle_identifiers": 1,
+      "expansion": 2.0,
+      "num_heads": 8,
+      "pos_encodings": "rope",
+      "halt_exploration_prob": 0.0,
+      "puzzle_emb_ndim": 0,
+      "m_loc": 64,
+      "d_mem": 40,
+      "top_k": 4,
+      "sparse_addressing": false,
+      "use_location_addressing": false
+    }
+  }
+}

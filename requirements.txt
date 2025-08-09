@@ -5,7 +5,6 @@ torch
 gymnasium
 pygame
 ale-py
-streamlit
 optuna
 pytest
 black
@@ -17,3 +16,5 @@ seaborn
 tabulate
 pydantic
 plotly
+PyQt6
+pyqtgraph

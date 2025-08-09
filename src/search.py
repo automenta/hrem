@@ -44,12 +44,11 @@ def objective(trial, base_config):
         train_ds, test_ds = get_dataset(trial_config)
         model = get_model(trial_config)
         trainer = Trainer(model, train_ds, test_ds, trial_config)
-        results = trainer.run()
+        final_metrics = trainer.run(trial)
 
         # Return the metric to optimize
         metric = base_config['search']['metric']
-        # Optuna works with single values, so we return the last value of the metric
-        return results[metric][-1]
+        return final_metrics[metric]
 
     except Exception as e:
         print(f"Trial {trial.number} failed with error: {e}")

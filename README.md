@@ -10,8 +10,8 @@ This repository provides a robust and extensible framework for evaluating Hierar
 - **Robust Training Engine**: A `Trainer` class that handles device management, training, evaluation, logging, and model checkpointing.
 - **Automated Testing**: A full suite of unit tests with `pytest` and a CI pipeline with GitHub Actions to ensure code quality.
 - **Advanced Hyperparameter Search**: Integrated support for `Optuna` to automate the search for optimal hyperparameters.
-- **Interactive Dashboard**: A `Streamlit`-based GUI to browse, visualize, and compare experiment results.
-- **Comprehensive Analysis**: Tools for both programmatic and interactive analysis of results, including a pre-built Jupyter notebook.
+- **Interactive GUI**: A PyQt6-based GUI to launch, monitor, and analyze experiments in real-time.
+- **Comprehensive Analysis**: Tools for both programmatic and interactive analysis of results.
 
 ## Project Structure
 
@@ -33,8 +33,7 @@ The project uses a standard `src`-layout for clean and maintainable code.
 │   ├── search.py             # Hyperparameter search script
 │   └── training.py           # The core Trainer class
 ├── tests/                    # Unit tests
-├── dashboard.py              # The Streamlit dashboard script
-├── hrem.py                   # The original script (kept for reference)
+├── gui.py                    # The PyQt6 GUI application
 ├── main.py                   # Main entry point for running experiments
 ├── pyproject.toml            # Project configuration
 └── requirements.txt          # Project dependencies
@@ -68,14 +67,33 @@ The project uses a standard `src`-layout for clean and maintainable code.
 
 ## Usage
 
-### Running Experiments
+### Running the GUI
 
-To run an experiment, use the `main.py` script and provide the path to a configuration file.
+The primary way to interact with this framework is through the PyQt6 GUI. To launch it, run:
+
+```bash
+python gui.py
+```
+
+From the GUI, you can:
+- Launch new experiments from config files.
+- View a list of all past and running experiments.
+- Monitor the learning curves of running experiments in real-time.
+- Analyze the results of completed experiments.
+
+### Running Experiments via Command Line
+
+While the GUI is recommended, you can still run experiments directly from the command line. To run a single experiment, use the `main.py` script:
 
 ```bash
 python main.py configs/default.json
 ```
-The results, including the best model, logs, and plots, will be saved in a subdirectory inside `results/`.
+
+To start an Optuna hyperparameter search, use `search.py`:
+
+```bash
+python search.py configs/copy_transformer_search.json
+```
 
 ### Running Tests
 
@@ -83,30 +101,6 @@ To run the unit test suite, use `pytest`:
 
 ```bash
 pytest
-```
-
-### Running the Interactive Dashboard
-
-To launch the Streamlit dashboard and browse experiment results:
-
-```bash
-streamlit run dashboard.py
-```
-
-### Running Hyperparameter Search
-
-To start an Optuna hyperparameter search (as defined in `src/search.py`):
-
-```bash
-python src/search.py
-```
-
-### Analyzing Results
-
-For interactive analysis, you can use the provided Jupyter notebook. First, ensure you have `jupyter` installed (`pip install jupyter`), then launch the notebook server:
-
-```bash
-jupyter notebook notebooks/Analyze_Results.ipynb
 ```
 
 ## Configuration
@@ -127,9 +121,8 @@ Experiments are configured using JSON files in the `configs/` directory. The str
   "training": {
     "epochs": 20,
     "batch_size": 32,
-    "learning_rate": 0.001,
-    "loss": "bce"
+    "learning_rate": 0.001
   }
 }
 ```
-You can create new config files to define new experiments.
+You can create new config files to define new experiments. The framework also supports a modular configuration system using an `extends` keyword to promote reusability. See the existing configs for examples.

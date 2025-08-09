@@ -1,22 +1,13 @@
 {
-  "extends": "default.json",
+  "extends": [
+    "default.json",
+    "base/models/hrem.json",
+    "base/datasets/associative_recall.json"
+  ],
   "experiment_name": "assoc_hrem_baseline",
   "model": {
-    "name": "hrem",
     "params": {
       "seq_len": 80
-    }
-  },
-  "dataset": {
-    "name": "associative_recall",
-    "params": {
-      "item_range": [
-        3,
-        6
-      ],
-      "vec_len": 10,
-      "train_size": 300,
-      "test_size": 50
     }
   },
   "training": {
