@@ -18,7 +18,7 @@ class Trainer:
         self.training_params = config.get('training', {})
 
         # Device configuration
-        device_str = self.training_params.get('device', 'cpu')
+        device_str = self.training_params.get('device', 'cuda')
         if device_str == 'cuda' and not torch.cuda.is_available():
             print("CUDA not available, falling back to CPU.")
             device_str = 'cpu'

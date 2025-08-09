@@ -31,12 +31,12 @@
     "params": {
       "item_range": [3, 6],
       "vec_len": 10,
-      "train_size": 3000,
-      "test_size": 500
+      "train_size": 300,
+      "test_size": 50
     }
   },
   "training": {
-    "epochs": 4,
+    "epochs": 1,
     "batch_size": 16,
     "learning_rate": 0.0005
   }
