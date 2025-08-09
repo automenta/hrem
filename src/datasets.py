@@ -1,5 +1,29 @@
 import torch
 from torch.utils.data import Dataset
+import gymnasium as gym
+
+class GymnasiumDataset:
+    """
+    A wrapper for Gymnasium environments to be used with the RL-extended Trainer.
+    This is not a traditional PyTorch Dataset, but rather an environment manager.
+    """
+    def __init__(self, env_name, **kwargs):
+        self.env = gym.make(env_name, **kwargs)
+        self.obs_space = self.env.observation_space
+        self.action_space = self.env.action_space
+
+    def reset(self):
+        obs, info = self.env.reset()
+        return obs
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        done = terminated or truncated
+        return obs, reward, done, info
+
+    def sample_action(self):
+        return self.action_space.sample()
+
 
 class ReverseDataset(Dataset):
     """

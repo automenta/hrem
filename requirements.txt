@@ -1,5 +1,10 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
+# It is recommended to install pytorch with the appropriate index-url for your system
+# e.g. pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 torch
+gymnasium
+pygame
+ale-py
 streamlit
 optuna
 pytest

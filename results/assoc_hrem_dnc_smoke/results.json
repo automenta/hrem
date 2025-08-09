@@ -1,8 +1,8 @@
 {
-  "train_loss": [
-    0.686797022819519
+  "train_metric": [
+    0.6900449196497599
   ],
-  "test_acc": 0.595,
+  "eval_metric": 0.55375,
   "best_epoch": 1,
-  "training_time": 0.07414984703063965
+  "training_time": 0.0718839168548584
 }

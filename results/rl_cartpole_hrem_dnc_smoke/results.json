@@ -1,0 +1,8 @@
+{
+  "train_metric": [
+    22.6
+  ],
+  "eval_metric": 9.0,
+  "best_epoch": 1,
+  "training_time": 0.3686859607696533
+}
