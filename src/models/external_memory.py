@@ -7,13 +7,14 @@ class ExternalMemory(nn.Module):
     A Differentiable Neural Computer (DNC) memory module.
     This implementation includes content-based addressing, allocation, and temporal linking.
     """
-    def __init__(self, d_model, m_loc, d_mem, top_k, sparse_addressing, use_location_addressing):
+    def __init__(self, d_model, m_loc, d_mem, top_k, sparse_addressing, use_location_addressing, forward_dtype='float32'):
         super().__init__()
         self.m_loc = m_loc
         self.d_mem = d_mem
         self.top_k = top_k if sparse_addressing else m_loc
         self.sparse_addressing = sparse_addressing
         self.use_location_addressing = use_location_addressing
+        self.dtype = getattr(torch, forward_dtype)
 
         # Controller to produce the interface vector from the model's hidden state
         # Base: read_key, read_beta, write_key, write_beta, erase, add
@@ -21,7 +22,7 @@ class ExternalMemory(nn.Module):
         if self.use_location_addressing:
             # Add gates for DNC: write_gate, allocation_gate, read_modes (3 gates)
             output_dim_L += 1 + 1 + 3
-        self.memory_controller = nn.Linear(d_model, output_dim_L)
+        self.memory_controller = nn.Linear(d_model, output_dim_L, dtype=self.dtype)
 
     def forward(self, z, M_prev, states):
         batch_size = z.size(0)
@@ -119,12 +120,12 @@ class ExternalMemory(nn.Module):
         return w
 
     def init_memory(self, batch_size, device):
-        M = torch.zeros(batch_size, self.m_loc, self.d_mem, device=device)
+        M = torch.zeros(batch_size, self.m_loc, self.d_mem, device=device, dtype=self.dtype)
         states = {
-            'w_r_prev': torch.zeros(batch_size, self.m_loc, device=device),
-            'w_w_prev': torch.zeros(batch_size, self.m_loc, device=device),
-            'usage': torch.zeros(batch_size, self.m_loc, device=device),
-            'precedence': torch.zeros(batch_size, self.m_loc, device=device),
-            'link_matrix': torch.zeros(batch_size, self.m_loc, self.m_loc, device=device)
+            'w_r_prev': torch.zeros(batch_size, self.m_loc, device=device, dtype=self.dtype),
+            'w_w_prev': torch.zeros(batch_size, self.m_loc, device=device, dtype=self.dtype),
+            'usage': torch.zeros(batch_size, self.m_loc, device=device, dtype=self.dtype),
+            'precedence': torch.zeros(batch_size, self.m_loc, device=device, dtype=self.dtype),
+            'link_matrix': torch.zeros(batch_size, self.m_loc, self.m_loc, device=device, dtype=self.dtype)
         }
         return M, states

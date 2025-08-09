@@ -1,8 +1,0 @@
-pyproject.toml
-src/hrem_evaluation.egg-info/PKG-INFO
-src/hrem_evaluation.egg-info/SOURCES.txt
-src/hrem_evaluation.egg-info/dependency_links.txt
-src/hrem_evaluation.egg-info/top_level.txt
-tests/test_datasets.py
-tests/test_models.py
-tests/test_trainer.py

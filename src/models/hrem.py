@@ -20,16 +20,19 @@ class HREM(HierarchicalReasoningModel_ACTV1):
             # If not using memory, this class is identical to HRM.
             return
 
-        # Memory-specific initializations
+        dtype = getattr(torch, self.config.forward_dtype)
+
+        # Memory-specific initializations, using the unified self.config
         self.memory = ExternalMemory(
             d_model=self.config.hidden_size,
-            m_loc=config_dict.get('m_loc', 64),
-            d_mem=config_dict.get('d_mem', 32),
-            top_k=config_dict.get('top_k', 4),
-            sparse_addressing=config_dict.get('sparse_addressing', True),
-            use_location_addressing=config_dict.get('use_location_addressing', True)
+            m_loc=self.config.m_loc,
+            d_mem=self.config.d_mem,
+            top_k=self.config.top_k if self.config.top_k is not None else 4, # Default from old code
+            sparse_addressing=self.config.sparse_addressing,
+            use_location_addressing=self.config.use_location_addressing,
+            forward_dtype=self.config.forward_dtype
         )
-        self.memory_readout_proj = nn.Linear(config_dict.get('d_mem', 32), self.config.hidden_size)
+        self.memory_readout_proj = nn.Linear(self.config.d_mem, self.config.hidden_size, dtype=dtype)
 
     def initial_carry(self, batch: Dict[str, torch.Tensor]) -> Tuple[HierarchicalReasoningModel_ACTV1Carry, Dict]:
         """Initializes the carry state for both HRM and the external memory."""

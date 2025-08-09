@@ -49,6 +49,13 @@ class HierarchicalReasoningModel_ACTV1Config(BaseModel):
     forward_dtype: str = "bfloat16"
     use_memory: bool = False
 
+    # HREM-specific memory parameters
+    m_loc: Optional[int] = None
+    d_mem: Optional[int] = None
+    top_k: Optional[int] = None
+    sparse_addressing: Optional[bool] = None
+    use_location_addressing: Optional[bool] = None
+
 @dataclass
 class HierarchicalReasoningModel_ACTV1InnerCarry:
     z_H: torch.Tensor
@@ -66,15 +73,18 @@ class HierarchicalReasoningModel_ACTV1Block(nn.Module):
     def __init__(self, config: HierarchicalReasoningModel_ACTV1Config) -> None:
         super().__init__()
         self.config = config
+        dtype = getattr(torch, config.forward_dtype)
         self.self_attn = Attention(
             hidden_size=config.hidden_size,
             num_heads=config.num_heads,
             head_dim=config.hidden_size // config.num_heads,
-            causal=False # In the original, this is non-causal attention
+            causal=False, # In the original, this is non-causal attention
+            dtype=dtype
         )
         self.mlp = SwiGLU(
             hidden_size=config.hidden_size,
             expansion=config.expansion,
+            dtype=dtype
         )
         self.norm_eps = config.rms_norm_eps
 
@@ -115,14 +125,14 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
 
         if self.config.vocab_size:
             self.embed_tokens = CastedEmbedding(self.config.vocab_size, self.config.hidden_size, cast_to=self.forward_dtype)
-            self.lm_head = CastedLinear(self.config.hidden_size, self.config.vocab_size, bias=False)
+            self.lm_head = CastedLinear(self.config.hidden_size, self.config.vocab_size, bias=False, cast_to=self.forward_dtype)
         else:
             # If no vocab_size, assume input is already vectorized. Use a linear projection.
             # This requires 'input_size' to be in the config.
             self.input_proj = CastedLinear(self.config.input_size, self.config.hidden_size, cast_to=self.forward_dtype)
-            self.output_proj = CastedLinear(self.config.hidden_size, self.config.input_size, bias=False)
+            self.output_proj = CastedLinear(self.config.hidden_size, self.config.input_size, bias=False, cast_to=self.forward_dtype)
 
-        self.q_head       = CastedLinear(self.config.hidden_size, 2, bias=True)
+        self.q_head       = nn.Linear(self.config.hidden_size, 2, bias=True)
 
         self.puzzle_emb_len = -(self.config.puzzle_emb_ndim // -self.config.hidden_size)  # ceil div
         if self.config.puzzle_emb_ndim > 0:
@@ -133,7 +143,8 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
         if self.config.pos_encodings == "rope":
             self.rotary_emb = RotaryEmbedding(dim=self.config.hidden_size // self.config.num_heads,
                                               max_position_embeddings=self.config.seq_len + self.puzzle_emb_len,
-                                              base=self.config.rope_theta)
+                                              base=self.config.rope_theta,
+                                              dtype=self.forward_dtype)
         elif self.config.pos_encodings == "learned":
             self.embed_pos = CastedEmbedding(self.config.seq_len + self.puzzle_emb_len, self.config.hidden_size, cast_to=self.forward_dtype)
         else:
@@ -150,7 +161,7 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
             self.q_head.bias.fill_(-5)
 
     def _input_embeddings(self, batch: Dict[str, torch.Tensor]):
-        input_tensor = batch['inputs']
+        input_tensor = batch['inputs'].to(self.forward_dtype)
         if self.config.vocab_size:
             embedding = self.embed_tokens(input_tensor.to(torch.int32))
         else:
@@ -212,9 +223,9 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
             # For vectorized tasks, we might apply a sigmoid for reconstruction tasks
             output = torch.sigmoid(self.output_proj(z_H))
 
-        q_logits = self.q_head(z_H[:, 0]).to(torch.float32)
+        q_logits = self.q_head(z_H[:, 0].to(torch.float32))
 
-        return new_carry, output, (q_logits[..., 0], q_logits[..., 1])
+        return new_carry, output.to(torch.float32), (q_logits[..., 0], q_logits[..., 1])
 
 
 class HierarchicalReasoningModel_ACTV1(nn.Module):
