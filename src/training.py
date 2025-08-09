@@ -16,15 +16,35 @@ class Trainer:
         self.config = config
         self.experiment_name = config['experiment_name']
         self.training_params = config.get('training', {})
-        self.device = "cpu"
-        #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Device configuration
+        device_str = self.training_params.get('device', 'cpu')
+        if device_str == 'cuda' and not torch.cuda.is_available():
+            print("CUDA not available, falling back to CPU.")
+            device_str = 'cpu'
+        self.device = torch.device(device_str)
         print(f"Using device: {self.device}")
+
+        if self.device.type == 'cuda':
+            torch.backends.cudnn.benchmark = True
 
         self.model = model.to(self.device)
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
-        self.train_loader = DataLoader(train_dataset, batch_size=self.training_params.get('batch_size', 32), shuffle=True)
-        self.test_loader = DataLoader(test_dataset, batch_size=self.training_params.get('batch_size', 32))
+
+        # Performance-tuned DataLoader
+        use_pin_memory = self.device.type == 'cuda'
+        self.train_loader = DataLoader(
+            train_dataset,
+            batch_size=self.training_params.get('batch_size', 32),
+            shuffle=True,
+            pin_memory=use_pin_memory
+        )
+        self.test_loader = DataLoader(
+            test_dataset,
+            batch_size=self.training_params.get('batch_size', 32),
+            pin_memory=use_pin_memory
+        )
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.training_params.get('learning_rate', 0.001))
 
