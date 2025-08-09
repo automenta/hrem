@@ -3,14 +3,28 @@
   "model": {
     "name": "hrem",
     "params": {
-      "d_model": 32,
-      "n_layers": 2,
-      "n_heads": 2,
-      "n_cycles": 2,
       "use_memory": true,
-      "m_loc": 16,
-      "d_mem": 8,
-      "use_location_addressing": true
+      "use_location_addressing": true,
+      "input_size": 8,
+      "hidden_size": 32,
+      "H_layers": 1,
+      "L_layers": 1,
+      "H_cycles": 1,
+      "L_cycles": 1,
+      "num_heads": 2,
+      "expansion": 2.0,
+      "pos_encodings": "rope",
+      "halt_max_steps": 3,
+      "halt_exploration_prob": 0.1,
+      "forward_dtype": "float32",
+      "vocab_size": null,
+      "puzzle_emb_ndim": 0,
+      "num_puzzle_identifiers": 1,
+      "seq_len": 8,
+      "batch_size": 4,
+      "m_loc": 32,
+      "d_mem": 16,
+      "top_k": 4
     }
   },
   "dataset": {

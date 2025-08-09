@@ -1,7 +1,7 @@
 import argparse
 import json
 import torch.nn as nn
-from src.models import MLP, HREM
+from src.models import MLP, HRM, HREM
 from src.datasets import ReverseDataset, TinyShakespeareDataset, CopyTaskDataset, AssociativeRecallDataset, GymnasiumDataset
 from src.training import Trainer
 
@@ -57,8 +57,12 @@ def main(config_path):
             model_params['output_size'] = model_params['input_size']
         # Add other MLP cases if needed
         model = MLP(**model_params)
+    elif model_name == 'hrm':
+        # The new HRM baseline. It's an ACT model, so the trainer will handle it.
+        model = HRM(config_dict=model_params)
     elif model_name == 'hrem':
-        model = HREM(**model_params)
+        # HREM extends HRM with memory.
+        model = HREM(config_dict=model_params)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 

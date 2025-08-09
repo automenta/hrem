@@ -1,10 +1,9 @@
 {
-  "experiment_name": "copy_hrem_dnc_smoke",
+  "experiment_name": "assoc_hrm_smoke",
   "model": {
-    "name": "hrem",
+    "name": "hrm",
     "params": {
-      "use_memory": true,
-      "use_location_addressing": true,
+      "use_memory": false,
       "input_size": 8,
       "hidden_size": 32,
       "H_layers": 1,
@@ -14,23 +13,20 @@
       "num_heads": 2,
       "expansion": 2.0,
       "pos_encodings": "rope",
-      "halt_max_steps": 3,
-      "halt_exploration_prob": 0.1,
+      "halt_max_steps": 1,
+      "halt_exploration_prob": 0.0,
       "forward_dtype": "float32",
       "vocab_size": null,
       "puzzle_emb_ndim": 0,
       "num_puzzle_identifiers": 1,
-      "seq_len": 9,
-      "batch_size": 4,
-      "m_loc": 32,
-      "d_mem": 16,
-      "top_k": 4
+      "seq_len": 8,
+      "batch_size": 4
     }
   },
   "dataset": {
-    "name": "copy",
+    "name": "associative_recall",
     "params": {
-      "seq_len": 4,
+      "item_range": [3, 6],
       "vec_len": 8,
       "train_size": 10,
       "test_size": 10

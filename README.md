@@ -29,7 +29,7 @@ The project uses a standard `src`-layout for clean and maintainable code.
 │   ├── __init__.py
 │   ├── analysis.py           # Functions for plotting and reporting
 │   ├── datasets.py           # Dataset classes
-│   ├── models.py             # Model architectures (MLP, HRM, HREM)
+│   ├── models/               # Model architectures (MLP, HRM, HREM)
 │   ├── search.py             # Hyperparameter search script
 │   └── training.py           # The core Trainer class
 ├── tests/                    # Unit tests
