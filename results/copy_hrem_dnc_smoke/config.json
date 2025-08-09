@@ -3,14 +3,15 @@
   "model": {
     "name": "hrem",
     "params": {
-      "seq_len": 168,
       "d_model": 32,
-      "n_cycles": 1,
-      "t_steps": 5,
+      "n_layers": 2,
+      "n_heads": 2,
+      "n_cycles": 2,
       "use_memory": true,
       "m_loc": 16,
       "d_mem": 8,
-      "use_location_addressing": true
+      "use_location_addressing": true,
+      "input_size": 8
     }
   },
   "dataset": {

@@ -125,8 +125,8 @@ class CopyTaskDataset(Dataset):
         x[self.seq_len, -1] = 1.0 # Delimiter
         y[self.seq_len+1:, :] = self.data[idx]
 
-        # The model expects a single flattened vector
-        return x.view(-1), y.view(-1)
+        # The model expects a sequence of vectors
+        return x, y
 
 class AssociativeRecallDataset(Dataset):
     """
@@ -174,4 +174,4 @@ class AssociativeRecallDataset(Dataset):
         x[num_items + 1] = query_vec
         y[num_items + 1] = answer_vec
 
-        return x.view(-1), y.view(-1)
+        return x, y
