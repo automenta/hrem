@@ -193,10 +193,14 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
         )
 
     def forward(self, carry: HierarchicalReasoningModel_ACTV1InnerCarry, batch: Dict[str, torch.Tensor], memory_readout: Optional[torch.Tensor] = None) -> Tuple[HierarchicalReasoningModel_ACTV1InnerCarry, torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        z_H, z_L = carry.z_H, carry.z_L
-        seq_len = batch["inputs"].shape[1] + self.puzzle_emb_len
-        cos_sin = self.rotary_emb(seq_len=seq_len) if hasattr(self, "rotary_emb") else None
+        z_H_full, z_L_full = carry.z_H, carry.z_L
+        current_seq_len = batch["inputs"].shape[1] + self.puzzle_emb_len
+        cos_sin = self.rotary_emb(seq_len=current_seq_len) if hasattr(self, "rotary_emb") else None
         seq_info = dict(cos_sin=cos_sin)
+
+        # Slice the states to the current batch's sequence length
+        z_H = z_H_full[:, :current_seq_len]
+        z_L = z_L_full[:, :current_seq_len]
 
         input_embeddings = self._input_embeddings(batch)
 
@@ -216,7 +220,14 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
         z_L = self.L_level(z_L, input_injection, **seq_info)
         z_H = self.H_level(z_H, z_L, **seq_info)
 
-        new_carry = HierarchicalReasoningModel_ACTV1InnerCarry(z_H=z_H.detach(), z_L=z_L.detach())
+        # Update the full-sized carry states
+        new_z_H = z_H_full.clone()
+        new_z_L = z_L_full.clone()
+        new_z_H[:, :current_seq_len] = z_H
+        new_z_L[:, :current_seq_len] = z_L
+
+        new_carry = HierarchicalReasoningModel_ACTV1InnerCarry(z_H=new_z_H.detach(), z_L=new_z_L.detach())
+
         if self.config.vocab_size:
             output = self.lm_head(z_H)[:, self.puzzle_emb_len:]
         else:
