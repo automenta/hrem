@@ -36,8 +36,8 @@
     }
   },
   "training": {
-    "epochs": 20,
-    "batch_size": 32,
+    "epochs": 4,
+    "batch_size": 16,
     "learning_rate": 0.0005
   }
 }

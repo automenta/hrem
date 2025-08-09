@@ -16,7 +16,8 @@ class Trainer:
         self.config = config
         self.experiment_name = config['experiment_name']
         self.training_params = config.get('training', {})
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = "cpu"
+        #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
 
         self.model = model.to(self.device)
