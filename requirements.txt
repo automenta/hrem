@@ -8,3 +8,5 @@ flake8
 scikit-learn
 pandas
 matplotlib
+seaborn
+tabulate
