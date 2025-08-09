@@ -1,6 +1,7 @@
 import torch
-import pytest
+
 from src.datasets import ReverseDataset, TinyShakespeareDataset
+
 
 def test_reverse_dataset():
     seq_len = 16
@@ -14,9 +15,10 @@ def test_reverse_dataset():
     assert torch.equal(x.flip(0), y)
     assert x.dtype == torch.float32
 
+
 def test_tiny_shakespeare_dataset():
     seq_len = 50
-    dataset = TinyShakespeareDataset(seq_length=seq_len, split='train')
+    dataset = TinyShakespeareDataset(seq_length=seq_len, split="train")
 
     assert dataset.vocab_size > 0
     assert len(dataset) > 0

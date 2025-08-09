@@ -2,11 +2,13 @@ import torch
 from torch.utils.data import Dataset
 import gymnasium as gym
 
+
 class GymnasiumDataset:
     """
     A wrapper for Gymnasium environments to be used with the RL-extended Trainer.
     This is not a traditional PyTorch Dataset, but rather an environment manager.
     """
+
     def __init__(self, env_name, **kwargs):
         self.env = gym.make(env_name, **kwargs)
         self.obs_space = self.env.observation_space
@@ -30,6 +32,7 @@ class ReverseDataset(Dataset):
     A dataset for the sequence reversal task.
     Each sample is a random binary sequence, and the target is its reverse.
     """
+
     def __init__(self, size, seq_len):
         self.size = size
         self.seq_len = seq_len
@@ -43,11 +46,13 @@ class ReverseDataset(Dataset):
         y = x.flip(0)
         return x, y
 
+
 class TinyShakespeareDataset(Dataset):
     """
     A character-level language modeling dataset based on a tiny snippet of Shakespeare.
     """
-    def __init__(self, seq_length=100, split='train'):
+
+    def __init__(self, seq_length=100, split="train"):
         self.seq_length = seq_length
         self.text = """
 First Citizen:
@@ -83,10 +88,10 @@ No more talking; let's do't: away, away!
 
         # Simple train/test split
         n = len(self.encoded_text)
-        if split == 'train':
-            self.encoded_text = self.encoded_text[:int(n*0.9)]
+        if split == "train":
+            self.encoded_text = self.encoded_text[: int(n * 0.9)]
         else:
-            self.encoded_text = self.encoded_text[int(n*0.9):]
+            self.encoded_text = self.encoded_text[int(n * 0.9) :]
 
     @property
     def vocab_size(self):
@@ -96,10 +101,11 @@ No more talking; let's do't: away, away!
         return len(self.encoded_text) - self.seq_length
 
     def __getitem__(self, idx):
-        chunk = self.encoded_text[idx:idx + self.seq_length + 1]
+        chunk = self.encoded_text[idx : idx + self.seq_length + 1]
         x = torch.tensor(chunk[:-1], dtype=torch.long)
         y = torch.tensor(chunk[1:], dtype=torch.long)
         return x, y
+
 
 class CopyTaskDataset(Dataset):
     """
@@ -107,6 +113,7 @@ class CopyTaskDataset(Dataset):
     The model receives a flattened sequence of vectors and must reconstruct
     the flattened output sequence.
     """
+
     def __init__(self, size, seq_len=10, vec_len=8):
         self.size = size
         self.seq_len = seq_len
@@ -121,12 +128,13 @@ class CopyTaskDataset(Dataset):
         x = torch.zeros(total_len, self.vec_len)
         y = torch.zeros(total_len, self.vec_len)
 
-        x[0:self.seq_len, :] = self.data[idx]
-        x[self.seq_len, -1] = 1.0 # Delimiter
-        y[self.seq_len+1:, :] = self.data[idx]
+        x[0 : self.seq_len, :] = self.data[idx]
+        x[self.seq_len, -1] = 1.0  # Delimiter
+        y[self.seq_len + 1 :, :] = self.data[idx]
 
         # The model expects a sequence of vectors
         return x, y
+
 
 class AssociativeRecallDataset(Dataset):
     """
@@ -134,11 +142,12 @@ class AssociativeRecallDataset(Dataset):
     The model receives a flattened sequence and must reconstruct the flattened output.
     Sequences are padded to a fixed length.
     """
+
     def __init__(self, size, item_range=(3, 6), vec_len=8):
         self.size = size
         self.item_range = item_range
         self.max_items = item_range[1]
-        self.data_len = vec_len - 2 # 2 bits are for markers
+        self.data_len = vec_len - 2  # 2 bits are for markers
         assert self.data_len > 0, "vec_len must be > 2"
 
         self.data = []
@@ -160,7 +169,9 @@ class AssociativeRecallDataset(Dataset):
         x = torch.zeros(max_seq_len, vec_len)
         y = torch.zeros(max_seq_len, vec_len)
 
-        item_vectors = torch.cat([items, torch.ones(num_items, 1), torch.zeros(num_items, 1)], dim=1)
+        item_vectors = torch.cat(
+            [items, torch.ones(num_items, 1), torch.zeros(num_items, 1)], dim=1
+        )
         x[:num_items] = item_vectors
 
         delimiter = torch.zeros(1, vec_len)

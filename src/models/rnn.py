@@ -2,26 +2,35 @@ import torch
 import torch.nn as nn
 from typing import Dict
 
+
 class RNN(nn.Module):
     """
     A standard RNN model for sequence modeling.
     """
-    def __init__(self, input_size_per_step: int, hidden_size: int, num_layers: int, output_size: int, **kwargs):
+
+    def __init__(
+        self,
+        input_size_per_step: int,
+        hidden_size: int,
+        num_layers: int,
+        output_size: int,
+        **kwargs,
+    ):
         """
         Initializes the RNN model.
 
         Args:
-            input_size_per_step (int): The number of features in the input.
-            hidden_size (int): The number of features in the hidden state.
-            num_layers (int): The number of recurrent layers.
-            output_size (int): The size of the output.
+            input_size_per_step: The number of features in the input.
+            hidden_size: The number of features in the hidden state.
+            num_layers: The number of recurrent layers.
+            output_size: The size of the output.
         """
         super().__init__()
         self.rnn = nn.RNN(
             input_size=input_size_per_step,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            batch_first=True
+            batch_first=True,
         )
         self.fc = nn.Linear(hidden_size, output_size)
         self.hidden_size = hidden_size
@@ -32,16 +41,16 @@ class RNN(nn.Module):
         Forward pass of the RNN model.
 
         Args:
-            batch (Dict[str, torch.Tensor]): A dictionary containing the input tensor
-                                             under the key 'inputs'. Shape: (batch_size, seq_len, input_size_per_step).
+            batch: A dictionary containing the input tensor under the key 'inputs'.
+                   Shape: (batch_size, seq_len, input_size_per_step).
 
         Returns:
-            Dict[str, torch.Tensor]: A dictionary containing the output logits
-                                     under the key 'logits'. Shape: (batch_size, seq_len).
+            A dictionary containing the output logits under the key 'logits'.
+            Shape: (batch_size, seq_len).
         """
-        inputs = batch['inputs']
-        if len(inputs.shape) == 2: # (batch_size, seq_len)
-            inputs = inputs.unsqueeze(-1) # (batch_size, seq_len, 1)
+        inputs = batch["inputs"]
+        if len(inputs.shape) == 2:  # (batch_size, seq_len)
+            inputs = inputs.unsqueeze(-1)  # (batch_size, seq_len, 1)
 
         inputs = inputs.float()
 
@@ -51,7 +60,7 @@ class RNN(nn.Module):
         # We pass the entire sequence of hidden states to the linear layer
         logits = self.fc(rnn_out).squeeze(-1)
 
-        return {'logits': logits}
+        return {"logits": logits}
 
     def initial_carry(self, batch: Dict[str, torch.Tensor]) -> tuple:
         """

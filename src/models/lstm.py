@@ -2,20 +2,30 @@ import torch
 import torch.nn as nn
 from typing import Dict
 
+
 class LSTM(nn.Module):
     """
     A standard LSTM model for sequence modeling.
     """
-    def __init__(self, vocab_size: int, embedding_dim: int, hidden_size: int, num_layers: int, output_size: int, **kwargs):
+
+    def __init__(
+        self,
+        vocab_size: int,
+        embedding_dim: int,
+        hidden_size: int,
+        num_layers: int,
+        output_size: int,
+        **kwargs,
+    ):
         """
         Initializes the LSTM model.
 
         Args:
-            vocab_size (int): The size of the vocabulary.
-            embedding_dim (int): The dimension of the token embeddings.
-            hidden_size (int): The number of features in the hidden state.
-            num_layers (int): The number of recurrent layers.
-            output_size (int): The size of the output (e.g., vocab_size for language modeling).
+            vocab_size: The size of the vocabulary.
+            embedding_dim: The dimension of the token embeddings.
+            hidden_size: The number of features in the hidden state.
+            num_layers: The number of recurrent layers.
+            output_size: The size of the output (e.g., vocab_size for LM).
         """
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
@@ -23,7 +33,7 @@ class LSTM(nn.Module):
             input_size=embedding_dim,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            batch_first=True
+            batch_first=True,
         )
         self.fc = nn.Linear(hidden_size, output_size)
         self.hidden_size = hidden_size
@@ -34,14 +44,14 @@ class LSTM(nn.Module):
         Forward pass of the LSTM model.
 
         Args:
-            batch (Dict[str, torch.Tensor]): A dictionary containing the input tensor
-                                             under the key 'inputs'. Shape: (batch_size, seq_len).
+            batch: A dictionary containing the input tensor under the key 'inputs'.
+                   Shape: (batch_size, seq_len).
 
         Returns:
-            Dict[str, torch.Tensor]: A dictionary containing the output logits
-                                     under the key 'logits'. Shape: (batch_size, seq_len, output_size).
+            A dictionary containing the output logits under the key 'logits'.
+            Shape: (batch_size, seq_len, output_size).
         """
-        inputs = batch['inputs']
+        inputs = batch["inputs"]
         embedded = self.embedding(inputs)
 
         # LSTM returns output, (hidden, cell)
@@ -50,7 +60,7 @@ class LSTM(nn.Module):
         # We pass the entire sequence of hidden states to the linear layer
         logits = self.fc(lstm_out)
 
-        return {'logits': logits}
+        return {"logits": logits}
 
     def initial_carry(self, batch: Dict[str, torch.Tensor]) -> tuple:
         """

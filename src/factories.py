@@ -1,5 +1,3 @@
-import torch.nn as nn
-
 from src.models import MLP, HRM, HREM, LSTM, RNN, Transformer
 from src.datasets import (
     ReverseDataset,
@@ -10,7 +8,14 @@ from src.datasets import (
 )
 
 # Registry for models
-MODEL_REGISTRY = {"mlp": MLP, "hrm": HRM, "hrem": HREM, "lstm": LSTM, "rnn": RNN, "transformer": Transformer}
+MODEL_REGISTRY = {
+    "mlp": MLP,
+    "hrm": HRM,
+    "hrem": HREM,
+    "lstm": LSTM,
+    "rnn": RNN,
+    "transformer": Transformer,
+}
 
 # Registry for datasets
 DATASET_REGISTRY = {
@@ -37,10 +42,8 @@ def get_dataset(config: dict):
         train_ds = dataset_class(
             dataset_params["train_size"], dataset_params["seq_len"]
         )
-        test_ds = dataset_class(
-            dataset_params["test_size"], dataset_params["seq_len"]
-        )
-        # Set the feature dimension for recurrent models, but MLP will need to override this
+        test_ds = dataset_class(dataset_params["test_size"], dataset_params["seq_len"])
+        # Set feature dimension for recurrent models; MLP overrides this
         config["model"]["params"]["input_size_per_step"] = 1
     elif dataset_name == "tiny_shakespeare":
         train_ds = dataset_class(seq_length=dataset_params["seq_length"], split="train")

@@ -4,24 +4,25 @@ import sys
 import argparse
 
 # Add the project root to the Python path to allow importing from 'src' and 'main'
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
-from main import get_model, get_dataset
+from main import get_model, get_dataset  # noqa: E402
+
 
 def validate_all_configs(config_dir):
     """
     Validates all .json configuration files in a given directory.
     """
     print(f"--- Starting Configuration Validation in {config_dir} ---")
-    config_files = sorted([f for f in os.listdir(config_dir) if f.endswith('.json')])
+    config_files = sorted([f for f in os.listdir(config_dir) if f.endswith(".json")])
     invalid_configs = []
 
     for config_file in config_files:
         config_path = os.path.join(config_dir, config_file)
         try:
             print(f"Validating {config_file}...")
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = json.load(f)
 
             # get_dataset can modify the config in-place, which is necessary
@@ -34,18 +35,21 @@ def validate_all_configs(config_dir):
             print(f"  \u2713 {config_file} is valid.")
 
         except Exception as e:
-            print(f"  \u2717 Error validating {config_file}: {e.__class__.__name__}: {e}")
+            print(
+                f"  \u2717 Error validating {config_file}: {e.__class__.__name__}: {e}"
+            )
             invalid_configs.append(config_file)
 
     return invalid_configs
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate model configuration files.")
     parser.add_argument(
-        '--config_dir',
+        "--config_dir",
         type=str,
-        default=os.path.join(project_root, 'configs'),
-        help='Directory containing the configuration files to validate.'
+        default=os.path.join(project_root, "configs"),
+        help="Directory containing the configuration files to validate.",
     )
     args = parser.parse_args()
 
