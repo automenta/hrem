@@ -4,35 +4,42 @@ import pytest
 import os
 from src.training import Trainer
 from src.datasets import ReverseDataset
+from typing import Dict
 
 class MockModel(nn.Module):
-    def __init__(self):
+    """A mock model for testing the Trainer."""
+    def __init__(self, input_size=16, output_size=16):
         super().__init__()
-        # This mock model flattens the sequence and processes it.
-        self.linear = nn.Linear(16, 16)
+        self.linear = nn.Linear(input_size, output_size)
 
-    def forward(self, x):
+    def forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """
+        Accepts a batch dictionary and returns a dictionary with logits,
+        mimicking the behavior of the real models.
+        """
+        x = batch['inputs']
         # The trainer will pass a sequence, so we need to handle it.
         # For simplicity, we just process each element in the sequence.
-        # This is not a realistic model, but it's fine for testing the trainer loop.
         if x.dim() > 2:
-             x = x.reshape(x.size(0), -1) # Flatten if it's a sequence
+             x = x.reshape(x.size(0), -1)
 
-        # A mock model for a binary sequence task
-        if x.shape[1] != 16:
-            x = x[:, :16]
+        # Ensure the input matches the linear layer size
+        if x.shape[1] != self.linear.in_features:
+            x = x[:, :self.linear.in_features]
 
-        return torch.sigmoid(self.linear(x))
+        logits = self.linear(x)
+        return {'logits': logits}
 
 
 @pytest.fixture
 def trainer_setup():
+    """Sets up a Trainer instance with a MockModel."""
     model = MockModel()
     train_ds = ReverseDataset(size=20, seq_len=16)
     test_ds = ReverseDataset(size=10, seq_len=16)
     config = {
-        "experiment_name": "test_experiment",
-        "dataset": { "name": "reverse" }, # Added dataset name
+        "experiment_name": "test_trainer_experiment",
+        "dataset": {"name": "reverse"},
         "training": {
             "batch_size": 4,
             "epochs": 1,
@@ -42,24 +49,22 @@ def trainer_setup():
     trainer = Trainer(model, train_ds, test_ds, config)
     yield trainer
     # Teardown: clean up created files
-    if os.path.exists(os.path.join(trainer.results_dir, 'config.json')):
-        os.remove(os.path.join(trainer.results_dir, 'config.json'))
-    if os.path.exists(os.path.join(trainer.results_dir, 'results.json')):
-        os.remove(os.path.join(trainer.results_dir, 'results.json'))
-    if os.path.exists(os.path.join(trainer.results_dir, 'best_model.pt')):
-        os.remove(os.path.join(trainer.results_dir, 'best_model.pt'))
-    if os.path.exists(trainer.results_dir):
-        os.rmdir(trainer.results_dir)
+    results_dir = trainer.results_dir
+    if os.path.exists(results_dir):
+        for f in os.listdir(results_dir):
+            os.remove(os.path.join(results_dir, f))
+        os.rmdir(results_dir)
 
 
 def test_trainer_init(trainer_setup):
+    """Tests the initialization of the Trainer."""
     assert trainer_setup is not None
     assert trainer_setup.device == torch.device("cpu")
     assert isinstance(trainer_setup.criterion, nn.MSELoss)
 
 def test_trainer_train_epoch(trainer_setup):
+    """Tests a single training epoch."""
     trainer = trainer_setup
-    # The train_epoch method now takes a progress bar object
     from tqdm import tqdm
     pbar = tqdm(trainer.train_loader)
     train_loss = trainer._train_epoch(pbar)
@@ -67,12 +72,14 @@ def test_trainer_train_epoch(trainer_setup):
     assert train_loss > 0
 
 def test_trainer_evaluate(trainer_setup):
+    """Tests the evaluation method."""
     trainer = trainer_setup
     test_loss = trainer._evaluate()
     assert isinstance(test_loss, float)
     assert test_loss >= 0.0
 
 def test_trainer_run(trainer_setup):
+    """Tests the main run loop."""
     trainer = trainer_setup
     trainer.run()
     # Check if results files were created

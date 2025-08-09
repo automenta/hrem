@@ -1,0 +1,26 @@
+{
+  "experiment_name": "lm_shakespeare_lstm_smoke",
+  "model": {
+    "name": "lstm",
+    "params": {
+      "embedding_dim": 32,
+      "hidden_size": 64,
+      "num_layers": 2,
+      "vocab_size": 43,
+      "output_size": 43
+    }
+  },
+  "dataset": {
+    "name": "tiny_shakespeare",
+    "params": {
+      "seq_length": 20,
+      "split": "train"
+    }
+  },
+  "training": {
+    "epochs": 1,
+    "batch_size": 4,
+    "learning_rate": 0.001,
+    "grad_clip_norm": 1.0
+  }
+}

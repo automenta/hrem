@@ -6,5 +6,7 @@ from .hrem import HREM
 
 from .hrm import HierarchicalReasoningModel_ACTV1
 
+from .lstm import LSTM
+
 # Rename for consistency with the project's naming conventions (e.g. HREM)
 HRM = HierarchicalReasoningModel_ACTV1

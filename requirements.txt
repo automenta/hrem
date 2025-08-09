@@ -16,3 +16,4 @@ matplotlib
 seaborn
 tabulate
 pydantic
+plotly

@@ -1,21 +1,33 @@
 {
   "experiment_name": "lm_shakespeare_smoke",
   "model": {
-    "name": "hrem",
+    "name": "hrm",
     "params": {
-      "d_model": 64,
-      "n_layers": 2,
-      "n_heads": 2,
-      "n_cycles": 1,
       "use_memory": false,
+      "hidden_size": 32,
+      "H_layers": 1,
+      "L_layers": 1,
+      "H_cycles": 1,
+      "L_cycles": 1,
+      "num_heads": 2,
+      "expansion": 2.0,
+      "pos_encodings": "rope",
+      "halt_max_steps": 1,
+      "halt_exploration_prob": 0.0,
+      "forward_dtype": "float32",
+      "puzzle_emb_ndim": 0,
+      "num_puzzle_identifiers": 1,
+      "seq_len": 20,
+      "batch_size": 4,
       "vocab_size": 43,
-      "input_size": 43
+      "output_size": 43
     }
   },
   "dataset": {
     "name": "tiny_shakespeare",
     "params": {
-      "seq_length": 20
+      "seq_length": 20,
+      "split": "train"
     }
   },
   "training": {

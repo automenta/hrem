@@ -7,7 +7,7 @@ hrem_evaluation.egg-info/top_level.txt
 src/__init__.py
 src/analysis.py
 src/datasets.py
-src/models.py
+src/layers.py
 src/search.py
 src/training.py
 tests/test_datasets.py

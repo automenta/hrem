@@ -5,7 +5,8 @@
     "params": {
       "input_size": 64,
       "hidden_size": 128,
-      "output_size": 64
+      "output_size": 64,
+      "input_size_per_step": 1
     }
   },
   "dataset": {
