@@ -1,78 +1,79 @@
+import argparse
 import optuna
-import torch
-from src.models import MLP # Assuming a factory or dict might be better later
-from src.datasets import ReverseDataset
-from src.training import Trainer
+import os
+from functools import partial
+import copy
 
-def objective(trial):
+from src.factories import get_dataset, get_model
+from src.training import Trainer
+from main import load_config # a bit of a circular import, but ok for now
+
+
+def set_nested_value(d, key_path, value):
+    keys = key_path.split('.')
+    current = d
+    for key in keys[:-1]:
+        current = current.setdefault(key, {})
+    current[keys[-1]] = value
+
+
+def objective(trial, base_config):
     """
     The objective function for Optuna to optimize.
-    A trial consists of:
-    1. Suggesting a set of hyperparameters.
-    2. Building and training a model with them.
-    3. Returning the performance metric.
     """
+    # Create a deep copy of the base config for this trial
+    trial_config = copy.deepcopy(base_config)
+
     # 1. Suggest hyperparameters
-    lr = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
-    hidden_size = trial.suggest_int("hidden_size", 32, 256, step=32)
+    search_config = trial_config['search']['params']
+    for param_path, search_params in search_config.items():
+        param_type = search_params['type']
+        args = search_params.get('args', [])
+        kwargs = search_params.get('kwargs', {})
 
-    # For this example, we'll hardcode the model and dataset
-    # but this could be parameterized in a more advanced setup.
-    seq_len = 64
+        suggest_method = getattr(trial, f"suggest_{param_type}")
+        value = suggest_method(param_path, *args, **kwargs)
 
-    # 2. Create the configuration for this trial
-    config = {
-        "experiment_name": f"hparam_search_trial_{trial.number}",
-        "model": {
-            "name": "mlp",
-            "params": {
-                "input_size": seq_len,
-                "hidden_size": hidden_size,
-                "output_size": seq_len,
-            },
-        },
-        "dataset": {
-            "name": "reverse",
-            "params": {"seq_len": seq_len, "train_size": 1000, "test_size": 200},
-        },
-        "training": {
-            "epochs": 10,  # Use fewer epochs for a faster search
-            "batch_size": 32,
-            "learning_rate": lr,
-            "loss": "bce",
-        },
-    }
+        set_nested_value(trial_config, param_path, value)
 
-    # 3. Setup and run the training
+    # Update experiment name for logging
+    trial_config['experiment_name'] = f"{base_config['experiment_name']}_trial_{trial.number}"
+
+    # 2. Setup and run the training
     try:
-        model = MLP(**config["model"]["params"])
-        train_ds = ReverseDataset(
-            config["dataset"]["params"]["train_size"],
-            config["dataset"]["params"]["seq_len"],
-        )
-        test_ds = ReverseDataset(
-            config["dataset"]["params"]["test_size"],
-            config["dataset"]["params"]["seq_len"],
-        )
-
-        trainer = Trainer(model, train_ds, test_ds, config)
+        train_ds, test_ds = get_dataset(trial_config)
+        model = get_model(trial_config)
+        trainer = Trainer(model, train_ds, test_ds, trial_config)
         results = trainer.run()
 
         # Return the metric to optimize
-        return results['test_acc']
+        metric = base_config['search']['metric']
+        # Optuna works with single values, so we return the last value of the metric
+        return results[metric][-1]
 
     except Exception as e:
         print(f"Trial {trial.number} failed with error: {e}")
-        # Return a value indicating failure, e.g., 0.0 or raise optuna.TrialPruned()
-        return 0.0
+        # Prune trial if it fails
+        raise optuna.exceptions.TrialPruned()
 
 
-if __name__ == "__main__":
-    # Create a study object and specify the direction is to maximize the metric.
-    study = optuna.create_study(direction="maximize")
+def main(config_path):
+    # Load base configuration
+    config = load_config(config_path)
+    search_settings = config.get('search', {})
 
-    # Start the optimization. Optuna will call the objective function n_trials times.
-    study.optimize(objective, n_trials=20)
+    if not search_settings:
+        print("Error: 'search' section not found in the configuration file.")
+        return
+
+    # Create a study object
+    study = optuna.create_study(direction=search_settings.get('direction', 'minimize'))
+
+    # Create a partial function for the objective with the config
+    obj_fn = partial(objective, base_config=config)
+
+    # Start the optimization
+    study.optimize(obj_fn, n_trials=search_settings.get('n_trials', 20))
 
     print("\n--- Hyperparameter Search Complete ---")
     print(f"Number of finished trials: {len(study.trials)}")
@@ -80,8 +81,16 @@ if __name__ == "__main__":
     print("Best trial:")
     trial = study.best_trial
 
-    print(f"  Value (Test Accuracy): {trial.value:.4f}")
+    print(f"  Value ({search_settings['metric']}): {trial.value:.4f}")
 
     print("  Params: ")
     for key, value in trial.params.items():
         print(f"    {key}: {value}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run a hyperparameter search.")
+    parser.add_argument("config", type=str, help="Path to the JSON configuration file for the search.")
+    args = parser.parse_args()
+
+    main(args.config)

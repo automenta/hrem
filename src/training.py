@@ -115,6 +115,8 @@ class Trainer:
         with open(os.path.join(self.results_dir, 'results.json'), 'w') as f:
             json.dump(results, f, indent=2)
 
+        return results
+
     def _train_epoch(self, pbar):
         self.model.train()
         total_loss = 0

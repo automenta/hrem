@@ -1,40 +1,35 @@
 {
-  "experiment_name": "copy_hrm_smoke",
-  "model": {
-    "name": "hrm",
-    "params": {
-      "use_memory": false,
-      "input_size": 8,
-      "hidden_size": 32,
-      "H_layers": 1,
-      "L_layers": 1,
-      "H_cycles": 1,
-      "L_cycles": 1,
-      "num_heads": 2,
-      "expansion": 2.0,
-      "pos_encodings": "rope",
-      "halt_max_steps": 1,
-      "halt_exploration_prob": 0.0,
-      "forward_dtype": "float32",
-      "vocab_size": null,
-      "puzzle_emb_ndim": 0,
-      "num_puzzle_identifiers": 1,
-      "seq_len": 9,
-      "batch_size": 4
-    }
-  },
   "dataset": {
     "name": "copy",
     "params": {
       "seq_len": 4,
-      "vec_len": 8,
-      "train_size": 10,
-      "test_size": 10
+      "test_size": 1,
+      "train_size": 1,
+      "vec_len": 8
+    }
+  },
+  "experiment_name": "copy_hrm_smoke",
+  "extends": "default.json",
+  "model": {
+    "name": "hrm",
+    "params": {
+      "H_cycles": 1,
+      "H_layers": 1,
+      "L_cycles": 1,
+      "L_layers": 1,
+      "batch_size": 4,
+      "forward_dtype": "float32",
+      "halt_max_steps": 1,
+      "hidden_size": 8,
+      "input_size": 8,
+      "num_heads": 2,
+      "seq_len": 9,
+      "use_memory": false
     }
   },
   "training": {
+    "batch_size": 1,
     "epochs": 1,
-    "batch_size": 4,
     "learning_rate": 0.001
   }
 }

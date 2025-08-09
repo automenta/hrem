@@ -1,0 +1,40 @@
+{
+  "extends": "default.json",
+  "experiment_name": "rnn_reverse_search",
+  "model": {
+    "name": "rnn",
+    "params": {
+      "num_layers": 1,
+      "output_size": 1
+    }
+  },
+  "dataset": {
+    "name": "reverse",
+    "params": {
+      "train_size": 100,
+      "test_size": 20,
+      "seq_len": 8
+    }
+  },
+  "training": {
+    "epochs": 5,
+    "batch_size": 16
+  },
+  "search": {
+    "direction": "minimize",
+    "metric": "test_loss",
+    "n_trials": 10,
+    "params": {
+      "training.learning_rate": {
+        "type": "float",
+        "args": [1e-4, 1e-2],
+        "kwargs": {"log": true}
+      },
+      "model.params.hidden_size": {
+        "type": "int",
+        "args": [8, 64],
+        "kwargs": {"step": 8}
+      }
+    }
+  }
+}

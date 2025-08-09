@@ -2,24 +2,23 @@
   "dataset": {
     "name": "reverse",
     "params": {
-      "seq_len": 64,
+      "seq_len": 2,
       "test_size": 1,
       "train_size": 1
     }
   },
-  "experiment_name": "baseline_mlp_reverse",
+  "experiment_name": "rnn_reverse_smoke",
   "extends": "default.json",
   "model": {
-    "name": "mlp",
+    "name": "rnn",
     "params": {
       "hidden_size": 4,
-      "input_size": 64,
-      "output_size": 64
+      "num_layers": 1,
+      "output_size": 1
     }
   },
   "training": {
     "batch_size": 1,
-    "epochs": 1,
-    "learning_rate": 0.001
+    "epochs": 1
   }
 }

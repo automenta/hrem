@@ -1,43 +1,36 @@
 {
-  "experiment_name": "assoc_hrem_baseline_smoke",
-  "model": {
-    "name": "hrem",
-    "params": {
-      "use_memory": true,
-      "seq_len": 8,
-      "hidden_size": 32,
-      "H_layers": 1,
-      "L_layers": 1,
-      "H_cycles": 1,
-      "L_cycles": 1,
-      "halt_max_steps": 2,
-      "batch_size": 4,
-      "num_puzzle_identifiers": 1,
-      "expansion": 2.0,
-      "num_heads": 8,
-      "pos_encodings": "rope",
-      "halt_exploration_prob": 0.0,
-      "puzzle_emb_ndim": 0,
-      "vocab_size": null,
-      "m_loc": 16,
-      "d_mem": 10,
-      "top_k": 4,
-      "sparse_addressing": false,
-      "use_location_addressing": false
-    }
-  },
   "dataset": {
     "name": "associative_recall",
     "params": {
-      "item_range": [3, 6],
-      "vec_len": 10,
-      "train_size": 10,
-      "test_size": 10
+      "item_range": [
+        3,
+        6
+      ],
+      "test_size": 1,
+      "train_size": 1,
+      "vec_len": 10
+    }
+  },
+  "experiment_name": "assoc_hrem_baseline_smoke",
+  "extends": "default.json",
+  "model": {
+    "name": "hrem",
+    "params": {
+      "H_cycles": 1,
+      "H_layers": 1,
+      "L_cycles": 1,
+      "L_layers": 1,
+      "batch_size": 4,
+      "d_mem": 4,
+      "halt_max_steps": 1,
+      "hidden_size": 10,
+      "m_loc": 4,
+      "seq_len": 8
     }
   },
   "training": {
+    "batch_size": 1,
     "epochs": 1,
-    "batch_size": 4,
     "learning_rate": 0.001
   }
 }
