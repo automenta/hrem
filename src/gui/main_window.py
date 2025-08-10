@@ -19,8 +19,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 
-from .experiment_manager import ExperimentManager, STATUS_RUNNING
+from .experiment_manager import ExperimentManager
 from .search_manager import SearchManager
+from .constants import STATUS_RUNNING
 
 # --- Constants ---
 WINDOW_WIDTH = 1200
@@ -134,7 +135,9 @@ class MainGUI(QMainWindow):
         left_layout = QVBoxLayout(left_panel)
         left_layout.addWidget(QLabel("Hyperparameter Searches"))
         self.search_list_widget = QListWidget()
-        self.search_list_widget.itemSelectionChanged.connect(self.update_search_display)
+        self.search_list_widget.itemSelectionChanged.connect(
+            self.on_search_selection_changed
+        )
         left_layout.addWidget(self.search_list_widget)
 
         button_layout = QHBoxLayout()
@@ -290,19 +293,31 @@ class MainGUI(QMainWindow):
         Displays the output of the selected search.
         """
         current_item = self.search_list_widget.currentItem()
-        self.search_output_display.clear()
 
         if not current_item:
             self.stop_search_button.setEnabled(False)
             return
 
         search_name = current_item.text().split(" ")[0]
-        # TODO: Read and display the live output from the search process
-        self.search_output_display.setText(f"Display for {search_name} coming soon...")
+
+        # Append any new output from the search process
+        new_output = self.search_manager.get_search_output(search_name)
+        if new_output:
+            self.search_output_display.moveCursor(
+                self.search_output_display.textCursor().End
+            )
+            self.search_output_display.insertPlainText(new_output)
 
         statuses = self.search_manager.get_search_statuses()
-        is_running = statuses.get(search_name) == "Running"
+        is_running = statuses.get(search_name) == STATUS_RUNNING
         self.stop_search_button.setEnabled(is_running)
+
+    def on_search_selection_changed(self):
+        """
+        Clears the search output display when the selection changes.
+        """
+        self.search_output_display.clear()
+        self.update_search_display()
 
     def stop_selected_search(self):
         """

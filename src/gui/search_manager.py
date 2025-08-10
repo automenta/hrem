@@ -1,57 +1,35 @@
-import os
-import subprocess
-import sys
+from .process_manager import BaseProcessManager
 
 
-class SearchManager:
+class SearchManager(BaseProcessManager):
     """
     Handles the logic for launching and monitoring hyperparameter search studies.
+    Inherits process management from BaseProcessManager.
     """
 
     def __init__(self):
-        self.processes = {}  # Tracks running search processes
+        super().__init__()
 
-    def launch_search(self, config_path):
+    def launch_search(self, config_path: str):
         """
         Launches a hyperparameter search in a new process.
         """
-        base_name = os.path.basename(config_path)
-        search_name = base_name.replace(".json", "")
+        return self.launch_process(config_path, "src/search.py")
 
-        process = subprocess.Popen(
-            [sys.executable, "src/search.py", config_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        self.processes[search_name] = process
-        return search_name
-
-    def stop_search(self, search_name):
+    def stop_search(self, search_name: str) -> bool:
         """
         Stops a running search process.
         """
-        if search_name in self.processes:
-            self.processes[search_name].terminate()
-            return True
-        return False
+        return self.stop_process(search_name)
 
-    def get_search_statuses(self):
+    def get_search_statuses(self) -> dict:
         """
         Checks the status of all running searches.
         """
-        statuses = {}
-        finished_processes = []
-        for search_name, process in self.processes.items():
-            if process.poll() is None:
-                statuses[search_name] = "Running"
-            else:
-                finished_processes.append(search_name)
-                if process.returncode == 0:
-                    statuses[search_name] = "Completed"
-                else:
-                    statuses[search_name] = "Failed"
+        return self.get_statuses()
 
-        for search_name in finished_processes:
-            del self.processes[search_name]
-
-        return statuses
+    def get_search_output(self, search_name: str) -> str:
+        """
+        Gets the latest stdout from a running search process.
+        """
+        return self.get_process_output(search_name)

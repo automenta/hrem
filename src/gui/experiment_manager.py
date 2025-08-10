@@ -1,79 +1,49 @@
 import json
 import os
-import subprocess
-import sys
+
+from .constants import STATUS_COMPLETED, STATUS_RUNNING
+from .process_manager import BaseProcessManager
 
 # --- Constants ---
 RESULTS_DIR = "results"
 
-# Experiment Statuses
-STATUS_RUNNING = "Running"
-STATUS_COMPLETED = "Completed"
-STATUS_FAILED = "Failed"
-STATUS_UNKNOWN = "Unknown"
 
-
-class ExperimentManager:
+class ExperimentManager(BaseProcessManager):
     """
     Handles the logic for launching, monitoring, and loading experiment results.
+    Inherits process management from BaseProcessManager.
     """
 
     def __init__(self):
-        self.processes = {}  # Tracks running subprocesses: {exp_name: Popen_obj}
+        super().__init__()
 
-    def launch_experiment(self, config_path):
+    def launch_experiment(self, config_path: str):
         """
-        Launches an experiment in a new process and tracks it.
+        Launches an experiment in a new process.
         """
-        # Extract a unique name for the experiment from the config path
-        base_name = os.path.basename(config_path)
-        exp_name = base_name.replace(".json", "")
+        return self.launch_process(config_path, "main.py")
 
-        process = subprocess.Popen(
-            [sys.executable, "main.py", config_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        self.processes[exp_name] = process
-
-    def stop_experiment(self, exp_name):
+    def stop_experiment(self, exp_name: str) -> bool:
         """
         Stops a running experiment process.
         """
-        if exp_name in self.processes:
-            self.processes[exp_name].terminate()
-            return True
-        return False
+        return self.stop_process(exp_name)
 
-    def get_experiment_statuses(self):
+    def get_experiment_statuses(self) -> dict:
         """
-        Checks the status of all experiments and returns a dictionary.
+        Checks the status of all experiments, including those on disk.
         """
-        statuses = {}
+        # Get statuses of running/finished processes from the parent
+        statuses = super().get_statuses()
 
-        # First, get all experiment directories on disk
+        # Augment with experiments that are on disk but not tracked as processes
         if os.path.exists(RESULTS_DIR):
             for exp_name in os.listdir(RESULTS_DIR):
-                if os.path.isdir(os.path.join(RESULTS_DIR, exp_name)):
-                    # Default status for experiments on disk is Completed
+                if (
+                    os.path.isdir(os.path.join(RESULTS_DIR, exp_name))
+                    and exp_name not in statuses
+                ):
                     statuses[exp_name] = STATUS_COMPLETED
-
-        # Now, check the tracked processes for more accurate statuses
-        finished_processes = []
-        for exp_name, process in self.processes.items():
-            return_code = process.poll()
-            if return_code is None:
-                statuses[exp_name] = STATUS_RUNNING
-            else:
-                finished_processes.append(exp_name)
-                if return_code == 0:
-                    statuses[exp_name] = STATUS_COMPLETED
-                else:
-                    statuses[exp_name] = STATUS_FAILED
-
-        # Clean up finished processes from the tracking dict
-        for exp_name in finished_processes:
-            del self.processes[exp_name]
 
         return statuses
 
