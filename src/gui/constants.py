@@ -1,3 +1,5 @@
+import os
+
 # --- Constants ---
 
 # Experiment and Search Statuses
@@ -13,3 +15,5 @@ REFRESH_INTERVAL_MS = 2000
 LAUNCH_DELAY_MS = 500
 INITIAL_SPLITTER_SIZES = [300, 900]
 CONFIGS_DIR = "configs"
+RESULTS_DIR = "results"
+ARCHIVE_DIR = os.path.join(RESULTS_DIR, "archive")
