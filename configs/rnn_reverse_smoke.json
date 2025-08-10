@@ -1,4 +1,4 @@
-{
+include "default.json"
   "dataset": {
     "name": "reverse",
     "params": {
@@ -8,7 +8,6 @@
     }
   },
   "experiment_name": "rnn_reverse_smoke",
-  "extends": "default.json",
   "model": {
     "name": "rnn",
     "params": {
@@ -21,4 +20,3 @@
     "batch_size": 1,
     "epochs": 1
   }
-}

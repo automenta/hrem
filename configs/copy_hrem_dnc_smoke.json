@@ -1,4 +1,4 @@
-{
+include "default.json"
   "dataset": {
     "name": "copy",
     "params": {
@@ -9,7 +9,6 @@
     }
   },
   "experiment_name": "copy_hrem_dnc_smoke",
-  "extends": "default.json",
   "model": {
     "name": "hrem",
     "params": {
@@ -27,7 +26,11 @@
       "m_loc": 4,
       "num_heads": 2,
       "seq_len": 9,
-      "use_location_addressing": true
+      "use_location_addressing": true,
+      "puzzle_emb_ndim": 0,
+      "num_puzzle_identifiers": 1,
+      "expansion": 2.0,
+      "pos_encodings": "rope"
     }
   },
   "training": {
@@ -35,4 +38,3 @@
     "epochs": 1,
     "learning_rate": 0.001
   }
-}

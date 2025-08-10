@@ -1,4 +1,4 @@
-{
+include "default.json"
   "dataset": {
     "name": "copy",
     "params": {
@@ -9,7 +9,6 @@
     }
   },
   "experiment_name": "copy_hrm_smoke",
-  "extends": "default.json",
   "model": {
     "name": "hrm",
     "params": {
@@ -24,7 +23,12 @@
       "input_size": 8,
       "num_heads": 2,
       "seq_len": 9,
-      "use_memory": false
+      "use_memory": false,
+      "puzzle_emb_ndim": 0,
+      "num_puzzle_identifiers": 1,
+      "expansion": 2.0,
+      "pos_encodings": "rope",
+      "halt_exploration_prob": 0.1
     }
   },
   "training": {
@@ -32,4 +36,3 @@
     "epochs": 1,
     "learning_rate": 0.001
   }
-}

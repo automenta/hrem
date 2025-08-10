@@ -1,5 +1,4 @@
-{
-  "extends": "default.json",
+include "default.json"
   "experiment_name": "rnn_reverse_search",
   "model": {
     "name": "rnn",
@@ -37,4 +36,3 @@
       }
     }
   }
-}

@@ -1,54 +1,17 @@
 import argparse
-import json
-import os
+
+from pyhocon import ConfigFactory
 
 from src.training import Trainer
 from src.factories import get_dataset, get_model
 
 
-def deep_merge(dict1, dict2):
+def load_config(config_path: str) -> dict:
     """
-    Recursively merges two dictionaries. dict2 values override dict1 values.
+    Loads a HOCON configuration file.
     """
-    result = dict1.copy()
-    for key, value in dict2.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
-
-
-def load_config(config_path: str, loaded_paths=None) -> dict:
-    """
-    Loads a JSON configuration file, handling inheritance from other configs.
-    """
-    if loaded_paths is None:
-        loaded_paths = set()
-
-    config_path = os.path.abspath(config_path)
-    if config_path in loaded_paths:
-        return {}  # Avoid circular dependencies
-    loaded_paths.add(config_path)
-
-    with open(config_path, "r") as f:
-        config = json.load(f)
-
-    if "extends" in config:
-        extends_paths = config["extends"]
-        if isinstance(extends_paths, str):
-            extends_paths = [extends_paths]
-
-        base_config = {}
-        for extends_path in extends_paths:
-            full_extends_path = os.path.join(os.path.dirname(config_path), extends_path)
-            extended_config = load_config(full_extends_path, loaded_paths)
-            base_config = deep_merge(base_config, extended_config)
-
-        config = deep_merge(base_config, config)
-        del config["extends"]
-
-    return config
+    config = ConfigFactory.parse_file(config_path)
+    return config.as_plain_ordered_dict()
 
 
 def main(config_path):

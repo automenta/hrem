@@ -7,7 +7,7 @@ import argparse
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, project_root)
 
-from main import get_model, get_dataset  # noqa: E402
+from main import get_model, get_dataset, load_config  # noqa: E402
 
 
 def validate_all_configs(config_dir):
@@ -22,8 +22,7 @@ def validate_all_configs(config_dir):
         config_path = os.path.join(config_dir, config_file)
         try:
             print(f"Validating {config_file}...")
-            with open(config_path, "r") as f:
-                config = json.load(f)
+            config = load_config(config_path)
 
             # get_dataset can modify the config in-place, which is necessary
             # for some models (e.g., setting input_size).

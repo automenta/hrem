@@ -1,4 +1,4 @@
-{
+include "default.json"
   "dataset": {
     "name": "associative_recall",
     "params": {
@@ -12,7 +12,6 @@
     }
   },
   "experiment_name": "assoc_hrem_baseline_smoke",
-  "extends": "default.json",
   "model": {
     "name": "hrem",
     "params": {
@@ -25,7 +24,13 @@
       "halt_max_steps": 1,
       "hidden_size": 10,
       "m_loc": 4,
-      "seq_len": 8
+      "seq_len": 8,
+      "puzzle_emb_ndim": 0,
+      "num_puzzle_identifiers": 1,
+      "expansion": 2.0,
+      "num_heads": 4,
+      "pos_encodings": "rope",
+      "halt_exploration_prob": 0.1
     }
   },
   "training": {
@@ -33,4 +38,3 @@
     "epochs": 1,
     "learning_rate": 0.001
   }
-}

@@ -26,6 +26,12 @@ class GymnasiumDataset:
     def sample_action(self):
         return self.action_space.sample()
 
+    def get_model_config_updates(self, model_name: str) -> dict:
+        """
+        Returns model-specific config updates for this dataset.
+        """
+        return {"input_size": self.obs_space.shape[0]}
+
 
 class ReverseDataset(Dataset):
     """
@@ -45,6 +51,19 @@ class ReverseDataset(Dataset):
         x = self.data[idx]
         y = x.flip(0)
         return x, y
+
+    def get_model_config_updates(self, model_name: str) -> dict:
+        """
+        Returns model-specific config updates for this dataset.
+        """
+        if model_name == "mlp":
+            return {
+                "input_size": self.seq_len,
+                "output_size": self.seq_len,
+            }
+        else:
+            # For recurrent models
+            return {"input_size_per_step": 1}
 
 
 class TinyShakespeareDataset(Dataset):
@@ -106,6 +125,15 @@ No more talking; let's do't: away, away!
         y = torch.tensor(chunk[1:], dtype=torch.long)
         return x, y
 
+    def get_model_config_updates(self, model_name: str) -> dict:
+        """
+        Returns model-specific config updates for this dataset.
+        """
+        return {
+            "vocab_size": self.vocab_size,
+            "output_size": self.vocab_size,
+        }
+
 
 class CopyTaskDataset(Dataset):
     """
@@ -134,6 +162,20 @@ class CopyTaskDataset(Dataset):
 
         # The model expects a sequence of vectors
         return x, y
+
+    def get_model_config_updates(self, model_name: str) -> dict:
+        """
+        Returns model-specific config updates for this dataset.
+        """
+        if model_name == "mlp":
+            return {
+                "input_size": (self.seq_len * 2 + 1) * self.vec_len,
+                "output_size": (self.seq_len * 2 + 1) * self.vec_len,
+            }
+        elif model_name == "transformer":
+            return {"output_size": self.vec_len}
+        else:
+            return {"input_size": self.vec_len}
 
 
 class AssociativeRecallDataset(Dataset):
@@ -186,3 +228,17 @@ class AssociativeRecallDataset(Dataset):
         y[num_items + 1] = answer_vec
 
         return x, y
+
+    def get_model_config_updates(self, model_name: str) -> dict:
+        """
+        Returns model-specific config updates for this dataset.
+        """
+        if model_name == "mlp":
+            return {
+                "input_size": (self.max_items + 2) * (self.data_len + 2),
+                "output_size": (self.max_items + 2) * (self.data_len + 2),
+            }
+        elif model_name == "transformer":
+            return {"output_size": self.data_len + 2}
+        else:
+            return {"input_size": self.data_len + 2}

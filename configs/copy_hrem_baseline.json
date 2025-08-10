@@ -1,11 +1,21 @@
-{
-  "extends": "default.json",
+include "default.json"
   "experiment_name": "copy_hrem_baseline",
   "model": {
     "name": "hrem",
     "params": {
       "seq_len": 168,
-      "sparse_addressing": true
+      "sparse_addressing": true,
+      "puzzle_emb_ndim": 0,
+      "num_puzzle_identifiers": 1,
+      "expansion": 2.0,
+      "num_heads": 4,
+      "pos_encodings": "rope",
+      "halt_exploration_prob": 0.1,
+      "H_cycles": 1,
+      "L_cycles": 1,
+      "H_layers": 1,
+      "L_layers": 1,
+      "halt_max_steps": 1
     }
   },
   "dataset": {
@@ -20,4 +30,3 @@
   "training": {
     "epochs": 5
   }
-}

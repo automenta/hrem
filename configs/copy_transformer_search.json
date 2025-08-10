@@ -1,5 +1,4 @@
-{
-  "extends": "default.json",
+include "default.json"
   "experiment_name": "copy_transformer_search",
   "model": {
     "name": "transformer",
@@ -50,4 +49,3 @@
       }
     }
   }
-}

@@ -1,9 +1,6 @@
-{
-  "extends": [
-    "default.json",
-    "base/models/hrem.json",
-    "base/datasets/associative_recall.json"
-  ],
+include "default.json"
+include "base/models/hrem.json"
+include "base/datasets/associative_recall.json"
   "experiment_name": "assoc_hrem_baseline",
   "model": {
     "params": {
@@ -13,4 +10,3 @@
   "training": {
     "epochs": 1
   }
-}

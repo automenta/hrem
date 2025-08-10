@@ -1,4 +1,4 @@
-{
+include "default.json"
   "dataset": {
     "name": "reverse",
     "params": {
@@ -8,7 +8,6 @@
     }
   },
   "experiment_name": "baseline_mlp_reverse",
-  "extends": "default.json",
   "model": {
     "name": "mlp",
     "params": {
@@ -22,4 +21,3 @@
     "epochs": 1,
     "learning_rate": 0.001
   }
-}

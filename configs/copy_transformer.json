@@ -1,5 +1,4 @@
-{
-  "extends": "default.json",
+include "default.json"
   "experiment_name": "copy_transformer",
   "model": {
     "name": "transformer",
@@ -22,4 +21,3 @@
   "training": {
     "epochs": 5
   }
-}
