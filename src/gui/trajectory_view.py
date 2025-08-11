@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QGraphicsLineItem,
 )
 from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QBrush, QPen, QColor
+from PyQt6.QtGui import QBrush, QPen, QColor, QPainter
 
 
 class TrajectoryView(QWidget):
@@ -21,7 +21,7 @@ class TrajectoryView(QWidget):
         self.manager = manager
         self.scene = QGraphicsScene()
         self.view = QGraphicsView(self.scene)
-        self.view.setRenderHint(self.view.RenderHint.Antialiasing)
+        self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

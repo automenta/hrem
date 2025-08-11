@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QLabel,
     QMenu,
+    QGraphicsLineItem,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QAction
@@ -216,7 +217,7 @@ class ScatterPlotView(QWidget):
         self._update_selection_highlighting()
 
         # Remove old race lines and color bar before adding new ones
-        items_to_remove = [item for item in self.plot_widget.items() if isinstance(item, (pg.QtGui.QGraphicsLineItem, pg.GradientLegend))]
+        items_to_remove = [item for item in self.plot_widget.items() if isinstance(item, (QGraphicsLineItem, pg.GradientLegend))]
         for item in items_to_remove:
             self.plot_widget.removeItem(item)
 
@@ -245,7 +246,7 @@ class ScatterPlotView(QWidget):
 
                 for baseline in members:
                     if baseline == challenger: continue
-                    line = pg.QtGui.QGraphicsLineItem(
+                    line = QGraphicsLineItem(
                         challenger["point"]["pos"][0],
                         challenger["point"]["pos"][1],
                         baseline["point"]["pos"][0],
