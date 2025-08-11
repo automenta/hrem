@@ -1,10 +1,14 @@
 import json
 import os
 import shutil
+import uuid
 from datetime import datetime
+
+from pyhocon import ConfigFactory, ConfigTree
 
 from .constants import (
     ARCHIVE_DIR,
+    BASE_MODELS_DIR,
     RESULTS_DIR,
     STATUS_COMPLETED,
     STATUS_RUNNING,
@@ -117,10 +121,20 @@ class ExperimentManager(BaseProcessManager):
             model_name = "N/A"
             dataset_name = "N/A"
             learning_rate = "N/A"
+            parent = "N/A"
+            num_params = "N/A"
+            epoch_time = "N/A"
+            race_id = "N/A"
+            is_baseline_for = None
             if config:
                 model_name = config.get("model", {}).get("name", "N/A")
                 dataset_name = config.get("dataset", {}).get("name", "N/A")
                 learning_rate = config.get("training", {}).get("learning_rate", "N/A")
+                parent = config.get("parent_experiment", "N/A")
+                num_params = config.get("model_num_parameters", "N/A")
+                epoch_time = config.get("avg_epoch_time_s", "N/A")
+                race_id = config.get("race_id", "N/A")
+                is_baseline_for = config.get("is_baseline_for")
 
             final_loss = "N/A"
             if results and "test_loss" in results and results["test_loss"]:
@@ -145,6 +159,11 @@ class ExperimentManager(BaseProcessManager):
                     "lr": learning_rate,
                     "final_loss": final_loss,
                     "created": creation_time,
+                    "parent": parent,
+                    "params": num_params,
+                    "epoch_time": epoch_time,
+                    "race_id": race_id,
+                    "is_baseline_for": is_baseline_for,
                 }
             )
 
@@ -285,9 +304,116 @@ class ExperimentManager(BaseProcessManager):
             config, err = self.load_experiment_config(new_name)
             if config and not err:
                 config["experiment_name"] = new_name
+                # --- Add parent experiment tracking ---
+                config["parent_experiment"] = original_name
                 with open(new_config_path, "w") as f:
                     json.dump(config, f, indent=4)
 
             return True, f"Experiment '{original_name}' cloned to '{new_name}' successfully."
         except Exception as e:
             return False, f"Error cloning experiment: {e}"
+
+    def get_experiment_graph(self):
+        """
+        Builds a graph structure of experiments based on parent-child relationships.
+
+        Returns:
+            dict: A dictionary containing 'nodes', 'edges', and 'roots'.
+                  'nodes': {exp_name: {data}}
+                  'edges': [(parent_name, child_name)]
+                  'roots': [exp_name]
+        """
+        experiments = self.get_experiments_data()
+        nodes = {exp["name"]: exp for exp in experiments}
+        edges = []
+
+        all_children = set()
+
+        for exp_name, exp_data in nodes.items():
+            parent = exp_data.get("parent")
+            if parent and parent != "N/A" and parent in nodes:
+                edges.append((parent, exp_name))
+                all_children.add(exp_name)
+
+        roots = [name for name in nodes if name not in all_children]
+
+        return {"nodes": nodes, "edges": edges, "roots": roots}
+
+    def launch_experiment_race(self, launch_info: dict):
+        """
+        Launches a "race" of experiments: a challenger against multiple baselines.
+        """
+        race_id = str(uuid.uuid4())[:8]
+        base_name = launch_info["base_name"]
+        challenger_config_path = launch_info["challenger_config"]
+        baseline_models = launch_info["baselines"]
+
+        # 1. Load challenger config
+        try:
+            challenger_config = ConfigFactory.parse_file(challenger_config_path)
+        except Exception as e:
+            return False, f"Failed to load challenger config: {e}"
+
+        # 2. Prepare and launch challenger experiment
+        challenger_exp_name = f"{base_name}_challenger"
+        challenger_config["experiment_name"] = challenger_exp_name
+        challenger_config["race_id"] = race_id
+        self._prepare_and_launch_exp(challenger_exp_name, challenger_config)
+
+        # 3. Prepare and launch baseline experiments
+        for baseline_model_name in baseline_models:
+            baseline_exp_name = f"{base_name}_baseline_{baseline_model_name}"
+            try:
+                # Create a new config for the baseline
+                baseline_config = ConfigTree()
+                baseline_config.put("training", challenger_config.get("training"))
+                baseline_config.put("dataset", challenger_config.get("dataset"))
+
+                # Load the base model config
+                base_model_config_path = os.path.join(BASE_MODELS_DIR, f"{baseline_model_name}.json")
+                base_model_config = ConfigFactory.parse_file(base_model_config_path)
+                baseline_config.put("model", base_model_config)
+
+                # Add metadata
+                baseline_config.put("experiment_name", baseline_exp_name)
+                baseline_config.put("race_id", race_id)
+                baseline_config.put("is_baseline_for", challenger_exp_name)
+
+                self._prepare_and_launch_exp(baseline_exp_name, baseline_config)
+
+            except Exception as e:
+                print(f"Failed to create/launch baseline {baseline_model_name}: {e}")
+                continue # Continue to the next baseline
+
+        return True, f"Experiment race '{base_name}' launched successfully."
+
+    def _prepare_and_launch_exp(self, exp_name: str, config: dict):
+        """
+        Helper to create an experiment directory, save the config, and launch it.
+        """
+        exp_dir = os.path.join(self.RESULTS_DIR, exp_name)
+        os.makedirs(exp_dir, exist_ok=True)
+
+        config_path = os.path.join(exp_dir, "config.json")
+        with open(config_path, "w") as f:
+            # HOCON config needs to be converted to a plain dict to be json-serializable
+            json.dump(config.as_plain_ordered_dict(), f, indent=4)
+
+        self.launch_experiment(config_path)
+
+
+    def get_plottable_metrics(self):
+        """
+        Returns a list of metrics that can be used for plotting in the analysis view.
+        This includes a mix of flattened config keys and result metrics.
+        """
+        # This can be expanded or made dynamic in the future
+        return sorted([
+            "results.final_loss",
+            "results.params",
+            "results.epoch_time",
+            "config.training.learning_rate",
+            "config.training.batch_size",
+            "config.model.params.hidden_dim",
+            "config.model.params.n_layers",
+        ])

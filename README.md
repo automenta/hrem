@@ -10,7 +10,10 @@ This repository provides a robust and extensible framework for evaluating Hierar
 - **Robust Training Engine**: A `Trainer` class that handles device management, training, evaluation, logging, and model checkpointing.
 - **Automated Testing**: A full suite of unit tests with `pytest` and a CI pipeline with GitHub Actions to ensure code quality.
 - **Advanced Hyperparameter Search**: Integrated support for `Optuna` to automate the search for optimal hyperparameters.
-- **Interactive GUI**: A PyQt6-based GUI to launch, monitor, and analyze experiments in real-time.
+- **Interactive GUI for Experiment-Driven Development**: A PyQt6-based GUI designed to manage, visualize, and analyze experiments. The GUI is built to support an intuitive, semi-autonomous workflow for exploring hyperparameter spaces and model architectures. Key GUI features include:
+    - **Paired Experiment Racing**: Launch a 'challenger' model against one or more 'baseline' models. The framework automatically generates matched configurations for a fair, head-to-head comparison on performance and efficiency metrics (parameter count, epoch time).
+    - **Research Tree Visualization**: A graph-based view to track the lineage of your experiments, making it easy to see the evolution from one idea to the next.
+    - **N-Dimensional Analysis**: A powerful scatter plot view that allows you to visualize all your experiments across different hyperparameters and results. Visually identify trends, outliers, and Pareto frontiers.
 - **Comprehensive Analysis**: Tools for both programmatic and interactive analysis of results.
 
 ## Project Structure
@@ -75,11 +78,19 @@ The primary way to interact with this framework is through the PyQt6 GUI. To lau
 python gui.py
 ```
 
-From the GUI, you can:
-- Launch new experiments from config files.
-- View a list of all past and running experiments.
-- Monitor the learning curves of running experiments in real-time.
-- Analyze the results of completed experiments.
+The GUI is organized into several tabs:
+
+- **Experiments**: The main dashboard. View a filterable, sortable table of all your experiments. Select one or more experiments to view their learning curves, compare their configurations, and manage them (clone, rename, delete).
+- **Research Tree**: A "skill tree" for your research. This view shows the parent-child relationships between your experiments, providing an intuitive map of your exploration process.
+- **Analysis**: A powerful scatter plot for visualizing the entire experiment space. Plot any hyperparameter or result against another, and use a third metric for color-coding. This view also visually connects experiments that were run as part of a "race", making it easy to see performance gaps.
+- **Search**: Manage and monitor `Optuna` hyperparameter searches.
+
+A key workflow is **Paired Experiment Racing**:
+1.  Click "Launch New".
+2.  In the dialog, select your primary "challenger" configuration file.
+3.  Give the race a base name.
+4.  Select one or more baseline models (e.g., `lstm`, `transformer`) to race against.
+5.  Launch the race. The system will automatically create and run experiments for your challenger and all selected baselines with matching training and dataset parameters.
 
 ### Running Experiments via Command Line
 

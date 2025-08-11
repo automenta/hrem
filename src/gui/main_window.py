@@ -29,6 +29,9 @@ from PyQt6.QtCore import Qt, QTimer
 from .experiment_manager import ExperimentManager
 from .search_manager import SearchManager
 from .archive_dialog import ArchiveManagerDialog
+from .trajectory_view import TrajectoryView
+from .scatter_plot_view import ScatterPlotView
+from .launch_dialog import LaunchExperimentDialog
 from .constants import (
     CONFIGS_DIR,
     INITIAL_SPLITTER_SIZES,
@@ -89,6 +92,8 @@ class MainGUI(QMainWindow):
         main_layout.addWidget(self.tabs)
 
         self._create_experiments_tab()
+        self._create_trajectory_tab()
+        self._create_analysis_tab()
         self._create_search_tab()
 
     def _create_management_tab(
@@ -166,6 +171,9 @@ class MainGUI(QMainWindow):
         self.launch_button.clicked.connect(self.launch_new_experiment)
         self.archive_manager_button = QPushButton("Manage Archives...")
         self.archive_manager_button.clicked.connect(self.open_archive_manager)
+        self.select_parent_button = QPushButton("Select Parent")
+        self.select_parent_button.clicked.connect(self.select_parent_experiment)
+        self.select_parent_button.setEnabled(False)
         self.clone_button = QPushButton("Clone")
         self.clone_button.clicked.connect(self.clone_selected_experiment)
         self.clone_button.setEnabled(False)
@@ -228,6 +236,7 @@ class MainGUI(QMainWindow):
                 self.stop_button,
                 self.delete_button,
                 self.archive_manager_button,
+                self.select_parent_button,
             ],
             right_panel,
         )
@@ -248,6 +257,30 @@ class MainGUI(QMainWindow):
             rateLimit=60,
             slot=self._on_plot_hover,
         )
+
+    def _create_trajectory_tab(self):
+        """
+        Creates the layout and widgets for the 'Trajectory' tab.
+        """
+        self.trajectory_tab = QWidget()
+        self.tabs.addTab(self.trajectory_tab, "Research Tree")
+        layout = QVBoxLayout(self.trajectory_tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.trajectory_view = TrajectoryView(self.manager)
+        layout.addWidget(self.trajectory_view)
+
+    def _create_analysis_tab(self):
+        """
+        Creates the layout and widgets for the 'Analysis' tab.
+        """
+        self.analysis_tab = QWidget()
+        self.tabs.addTab(self.analysis_tab, "Analysis")
+        layout = QVBoxLayout(self.analysis_tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.scatter_plot_view = ScatterPlotView(self.manager)
+        self.scatter_plot_view.experiment_selected.connect(self.select_experiment_by_name)
+        layout.addWidget(self.scatter_plot_view)
+
 
     def _create_search_tab(self):
         """
@@ -276,15 +309,13 @@ class MainGUI(QMainWindow):
 
     def launch_new_experiment(self):
         """
-        Opens a file dialog to select a config file and launches the experiment.
+        Opens a custom dialog to launch a new experiment or a race.
         """
-        config_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Experiment Config", CONFIGS_DIR, "Config files (*.json *.conf)"
-        )
-        if config_path:
-            self.manager.launch_experiment(config_path)
-            # A small delay to allow the experiment to create its directory
-            QTimer.singleShot(LAUNCH_DELAY_MS, self.populate_experiment_list)
+        dialog = LaunchExperimentDialog(self)
+        if dialog.exec():
+            launch_info = dialog.get_launch_info()
+            self.manager.launch_experiment_race(launch_info)
+            QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
 
     def populate_experiment_list(self):
         """
@@ -300,7 +331,10 @@ class MainGUI(QMainWindow):
 
         experiments = self.manager.get_experiments_data()
 
-        headers = ["Compare", "Name", "Status", "Model", "Dataset", "LR", "Final Loss", "Created"]
+        headers = [
+            "Compare", "Name", "Status", "Model", "Dataset", "LR", "Final Loss",
+            "Params", "Epoch Time (s)", "Parent", "Race ID", "Created"
+        ]
         self.exp_table.setColumnCount(len(headers))
         self.exp_table.setHorizontalHeaderLabels(headers)
 
@@ -327,7 +361,11 @@ class MainGUI(QMainWindow):
             self.exp_table.setItem(row, 4, QTableWidgetItem(str(exp_data["dataset"])))
             self.exp_table.setItem(row, 5, NumericTableWidgetItem(str(exp_data["lr"])))
             self.exp_table.setItem(row, 6, NumericTableWidgetItem(str(exp_data["final_loss"])))
-            self.exp_table.setItem(row, 7, QTableWidgetItem(exp_data["created"]))
+            self.exp_table.setItem(row, 7, NumericTableWidgetItem(str(exp_data["params"])))
+            self.exp_table.setItem(row, 8, NumericTableWidgetItem(str(exp_data["epoch_time"])))
+            self.exp_table.setItem(row, 9, QTableWidgetItem(exp_data["parent"]))
+            self.exp_table.setItem(row, 10, QTableWidgetItem(exp_data["race_id"]))
+            self.exp_table.setItem(row, 11, QTableWidgetItem(exp_data["created"]))
 
         self.exp_table.setSortingEnabled(True)
         self.exp_table.resizeColumnsToContents()
@@ -474,6 +512,21 @@ class MainGUI(QMainWindow):
             else:
                 QMessageBox.warning(self, "Error", message)
 
+    def select_parent_experiment(self):
+        """
+        Finds and selects the parent of the currently selected experiment.
+        """
+        selected_rows = self.exp_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+
+        # Column 9 is the parent column
+        parent_item = self.exp_table.item(selected_rows[0].row(), 9)
+        if parent_item and parent_item.text() != "N/A":
+            self.select_experiment_by_name(parent_item.text())
+        else:
+            QMessageBox.information(self, "No Parent", "This experiment has no parent.")
+
 
     def refresh_ui(self):
         """
@@ -483,6 +536,8 @@ class MainGUI(QMainWindow):
         self.update_selected_experiment_display()
         self.populate_search_list()
         self.update_search_display()
+        self.trajectory_view.draw_graph()
+        self.scatter_plot_view.update_plot()
 
     def update_selected_experiment_display(self):
         """
@@ -513,6 +568,7 @@ class MainGUI(QMainWindow):
             self.clone_button.setEnabled(False)
             self.rename_button.setEnabled(False)
             self.delete_button.setEnabled(False)
+            self.select_parent_button.setEnabled(False)
             return
 
         # Update plot
@@ -555,6 +611,10 @@ class MainGUI(QMainWindow):
         self.rename_button.setEnabled(not is_running)
         self.delete_button.setEnabled(not is_running)
 
+        # Enable parent button if parent exists
+        parent = config_data.get("parent_experiment") if config_data else None
+        self.select_parent_button.setEnabled(bool(parent))
+
     def _display_comparison(self):
         """
         Displays the plots for all experiments in the comparison list.
@@ -572,6 +632,7 @@ class MainGUI(QMainWindow):
         self.clone_button.setEnabled(False)
         self.rename_button.setEnabled(False)
         self.delete_button.setEnabled(False)
+        self.select_parent_button.setEnabled(False)
 
         colors = ["b", "r", "g", "c", "m", "y", "w"]
         metric_base_name = self.metric_selector.currentText()

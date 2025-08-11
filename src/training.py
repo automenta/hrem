@@ -1,4 +1,5 @@
 import os
+import time
 
 import optuna
 import torch
@@ -54,6 +55,10 @@ class Trainer:
         )
         self.logger = TrainingLogger(config)
 
+        # --- Log static model info ---
+        num_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        self.logger.log_static_metric("model_num_parameters", num_params)
+
         # Learning Rate Scheduler
         self.lr_scheduler_params = self.training_params.get("lr_scheduler", {})
         if self.lr_scheduler_params.get("enabled", False):
@@ -83,13 +88,18 @@ class Trainer:
 
     def run(self, trial=None):
         epochs = self.training_params.get("epochs", 10)
+        epoch_times = []
 
         for epoch in range(epochs):
+            start_time = time.time()
             pbar_desc = f"Epoch {epoch+1}/{epochs}"
             pbar = tqdm(self.train_loader, desc=pbar_desc)
 
             train_loss = self._train_epoch(pbar)
             test_loss = self._evaluate()
+
+            end_time = time.time()
+            epoch_times.append(end_time - start_time)
 
             self.logger.log(
                 {"train_loss": train_loss, "test_loss": test_loss}, step=epoch
@@ -119,6 +129,11 @@ class Trainer:
                 if self.early_stopping_counter >= self.early_stopping_patience:
                     print(f"Early stopping triggered after {epoch+1} epochs.")
                     break
+
+        # --- Log performance metrics ---
+        if epoch_times:
+            avg_epoch_time = sum(epoch_times) / len(epoch_times)
+            self.logger.log_static_metric("avg_epoch_time_s", round(avg_epoch_time, 4))
 
         self.logger.save_results()
         return self.logger.get_final_metrics()

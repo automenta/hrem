@@ -1,0 +1,6 @@
+{
+    "name": "mlp",
+    "params": {
+        "hidden_size": 256
+    }
+}

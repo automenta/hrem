@@ -1,0 +1,8 @@
+{
+    "name": "lstm",
+    "params": {
+        "embedding_dim": 64,
+        "hidden_size": 128,
+        "num_layers": 2
+    }
+}

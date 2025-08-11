@@ -20,7 +20,15 @@ class TrainingLogger:
     def _save_config(self):
         """Saves the configuration file to the results directory."""
         with open(os.path.join(self.results_dir, "config.json"), "w") as f:
-            json.dump(self.config, f, indent=2)
+            json.dump(self.config, f, indent=4)
+
+    def log_static_metric(self, key: str, value):
+        """
+        Logs a single, static key-value pair to the config file.
+        This is for metadata that doesn't change over time (e.g., param count).
+        """
+        self.config[key] = value
+        self._save_config()
 
     def log(self, metrics: dict, step: int):
         """

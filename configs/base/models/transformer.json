@@ -1,0 +1,9 @@
+{
+    "name": "transformer",
+    "params": {
+        "hidden_size": 128,
+        "num_layers": 2,
+        "num_heads": 4,
+        "dropout": 0.1
+    }
+}
