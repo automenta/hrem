@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QInputDialog,
+    QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, QTimer
 
@@ -70,6 +71,7 @@ class MainGUI(QMainWindow):
         self.comparison_list = []
         self.current_train_loss = []
         self.current_test_loss = []
+        self.exp_table_headers = []
 
         self._init_ui()
         self.refresh_ui()
@@ -146,6 +148,7 @@ class MainGUI(QMainWindow):
         # --- Left Panel Widgets ---
         self.exp_table = QTableWidget()
         self.exp_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.exp_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.exp_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.exp_table.verticalHeader().setVisible(False)
         header = self.exp_table.horizontalHeader()
@@ -181,11 +184,16 @@ class MainGUI(QMainWindow):
         self.rename_button.clicked.connect(self.rename_selected_experiment)
         self.rename_button.setEnabled(False)
         self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self.stop_selected_experiment)
+        self.stop_button.clicked.connect(self.stop_selected_experiments)
         self.stop_button.setEnabled(False)
         self.delete_button = QPushButton("Delete")
-        self.delete_button.clicked.connect(self.archive_selected_experiment)
+        self.delete_button.clicked.connect(self.archive_selected_experiments)
         self.delete_button.setEnabled(False)
+        self.compare_all_button = QPushButton("Compare All Visible")
+        self.compare_all_button.clicked.connect(self._compare_all_visible)
+        self.clear_comparison_button = QPushButton("Clear Comparison")
+        self.clear_comparison_button.clicked.connect(self._clear_comparison)
+        self.clear_comparison_button.setEnabled(False)
 
 
         # --- Right Panel ---
@@ -237,6 +245,8 @@ class MainGUI(QMainWindow):
                 self.delete_button,
                 self.archive_manager_button,
                 self.select_parent_button,
+                self.compare_all_button,
+                self.clear_comparison_button,
             ],
             right_panel,
         )
@@ -279,7 +289,27 @@ class MainGUI(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         self.scatter_plot_view = ScatterPlotView(self.manager)
         self.scatter_plot_view.experiment_selected.connect(self.select_experiment_by_name)
+        self.scatter_plot_view.experiments_selected_for_filtering.connect(
+            self._filter_experiments_from_analysis
+        )
         layout.addWidget(self.scatter_plot_view)
+
+    def _filter_experiments_from_analysis(self, names: list):
+        """
+        Filters the experiment list based on a selection from the analysis tab.
+        """
+        if not names:
+            return
+
+        # Switch to the experiments tab
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Experiments":
+                self.tabs.setCurrentIndex(i)
+                break
+
+        # Apply a special filter
+        filter_text = f"name:{','.join(names)}"
+        self.filter_input.setText(filter_text)
 
 
     def _create_search_tab(self):
@@ -307,6 +337,17 @@ class MainGUI(QMainWindow):
             self.search_output_display,
         )
 
+    def _get_column_index(self, column_name: str) -> int:
+        """
+        Gets the index of a column by its header name.
+        Returns -1 if the column name is not found.
+        """
+        try:
+            return self.exp_table_headers.index(column_name)
+        except ValueError:
+            print(f"Warning: Column '{column_name}' not found in experiment table.")
+            return -1
+
     def launch_new_experiment(self):
         """
         Opens a custom dialog to launch a new experiment or a race.
@@ -331,45 +372,64 @@ class MainGUI(QMainWindow):
 
         experiments = self.manager.get_experiments_data()
 
-        headers = [
+        self.exp_table_headers = [
             "Compare", "Name", "Status", "Model", "Dataset", "LR", "Final Loss",
             "Params", "Epoch Time (s)", "Parent", "Race ID", "Created"
         ]
-        self.exp_table.setColumnCount(len(headers))
-        self.exp_table.setHorizontalHeaderLabels(headers)
+        self.exp_table.setColumnCount(len(self.exp_table_headers))
+        self.exp_table.setHorizontalHeaderLabels(self.exp_table_headers)
+
+        # --- Get column indices once ---
+        name_col = self._get_column_index("Name")
+        status_col = self._get_column_index("Status")
+        model_col = self._get_column_index("Model")
+        dataset_col = self._get_column_index("Dataset")
+        lr_col = self._get_column_index("LR")
+        loss_col = self._get_column_index("Final Loss")
+        params_col = self._get_column_index("Params")
+        time_col = self._get_column_index("Epoch Time (s)")
+        parent_col = self._get_column_index("Parent")
+        race_col = self._get_column_index("Race ID")
+        created_col = self._get_column_index("Created")
+        compare_col = self._get_column_index("Compare")
+
 
         for row, exp_data in enumerate(experiments):
             self.exp_table.insertRow(row)
 
             # --- Checkbox for comparison ---
-            chk_box_widget = QWidget()
-            chk_box_layout = QHBoxLayout(chk_box_widget)
-            chk_box_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            chk_box_layout.setContentsMargins(0,0,0,0)
-            compare_checkbox = QCheckBox()
-            # Use a lambda to pass the experiment name to the handler
-            compare_checkbox.stateChanged.connect(
-                lambda state, name=exp_data["name"]: self._on_compare_checkbox_changed(state, name)
-            )
-            chk_box_layout.addWidget(compare_checkbox)
-            self.exp_table.setCellWidget(row, 0, chk_box_widget)
+            if compare_col != -1:
+                chk_box_widget = QWidget()
+                chk_box_layout = QHBoxLayout(chk_box_widget)
+                chk_box_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                chk_box_layout.setContentsMargins(0,0,0,0)
+                compare_checkbox = QCheckBox()
+                # Use a lambda to pass the experiment name to the handler
+                compare_checkbox.stateChanged.connect(
+                    lambda state, name=exp_data["name"]: self._on_compare_checkbox_changed(state, name)
+                )
+                chk_box_layout.addWidget(compare_checkbox)
+                self.exp_table.setCellWidget(row, compare_col, chk_box_widget)
 
             # --- Other data ---
-            self.exp_table.setItem(row, 1, QTableWidgetItem(exp_data["name"]))
-            self.exp_table.setItem(row, 2, QTableWidgetItem(exp_data["status"]))
-            self.exp_table.setItem(row, 3, QTableWidgetItem(str(exp_data["model"])))
-            self.exp_table.setItem(row, 4, QTableWidgetItem(str(exp_data["dataset"])))
-            self.exp_table.setItem(row, 5, NumericTableWidgetItem(str(exp_data["lr"])))
-            self.exp_table.setItem(row, 6, NumericTableWidgetItem(str(exp_data["final_loss"])))
-            self.exp_table.setItem(row, 7, NumericTableWidgetItem(str(exp_data["params"])))
-            self.exp_table.setItem(row, 8, NumericTableWidgetItem(str(exp_data["epoch_time"])))
-            self.exp_table.setItem(row, 9, QTableWidgetItem(exp_data["parent"]))
-            self.exp_table.setItem(row, 10, QTableWidgetItem(exp_data["race_id"]))
-            self.exp_table.setItem(row, 11, QTableWidgetItem(exp_data["created"]))
+            if name_col != -1: self.exp_table.setItem(row, name_col, QTableWidgetItem(exp_data["name"]))
+            if status_col != -1: self.exp_table.setItem(row, status_col, QTableWidgetItem(exp_data["status"]))
+            if model_col != -1: self.exp_table.setItem(row, model_col, QTableWidgetItem(str(exp_data["model"])))
+            if dataset_col != -1: self.exp_table.setItem(row, dataset_col, QTableWidgetItem(str(exp_data["dataset"])))
+            if lr_col != -1: self.exp_table.setItem(row, lr_col, NumericTableWidgetItem(str(exp_data["lr"])))
+            if loss_col != -1: self.exp_table.setItem(row, loss_col, NumericTableWidgetItem(str(exp_data["final_loss"])))
+            if params_col != -1: self.exp_table.setItem(row, params_col, NumericTableWidgetItem(str(exp_data["params"])))
+            if time_col != -1: self.exp_table.setItem(row, time_col, NumericTableWidgetItem(str(exp_data["epoch_time"])))
+            if parent_col != -1: self.exp_table.setItem(row, parent_col, QTableWidgetItem(exp_data["parent"]))
+            if race_col != -1: self.exp_table.setItem(row, race_col, QTableWidgetItem(exp_data["race_id"]))
+            if created_col != -1: self.exp_table.setItem(row, created_col, QTableWidgetItem(exp_data["created"]))
 
         self.exp_table.setSortingEnabled(True)
         self.exp_table.resizeColumnsToContents()
-        self.exp_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+
+        name_col = self._get_column_index("Name")
+        if name_col != -1:
+            self.exp_table.horizontalHeader().setSectionResizeMode(name_col, QHeaderView.ResizeMode.Stretch)
 
         # Restore filter and selection
         self.filter_experiments(filter_text)
@@ -379,25 +439,50 @@ class MainGUI(QMainWindow):
     def filter_experiments(self, text):
         """
         Filters the experiment table by name based on the input text.
+        Handles both substring search and exact name matching from analysis tab.
         """
-        for i in range(self.exp_table.rowCount()):
-            # Column 1 is the name column now
-            name_item = self.exp_table.item(i, 1)
+        name_col = self._get_column_index("Name")
+        if name_col == -1:
+            return
+
+        # Handle special filter from analysis tab
+        if text.startswith("name:"):
+            filter_names = set(text.replace("name:", "").split(','))
+            for i in range(self.exp_table.rowCount()):
+                name_item = self.exp_table.item(i, name_col)
+                if name_item:
+                    self.exp_table.setRowHidden(i, name_item.text() not in filter_names)
+        else:
+            # Standard substring search
+            for i in range(self.exp_table.rowCount()):
+                name_item = self.exp_table.item(i, name_col)
+                if name_item:
+                    self.exp_table.setRowHidden(i, text.lower() not in name_item.text().lower())
+
+    def get_selected_experiment_names(self):
+        """
+        Gets the names of all currently selected experiments in the table.
+        """
+        selected_names = []
+        name_col = self._get_column_index("Name")
+        if name_col == -1:
+            return []
+
+        selected_rows = self.exp_table.selectionModel().selectedRows()
+        for index in selected_rows:
+            name_item = self.exp_table.item(index.row(), name_col)
             if name_item:
-                self.exp_table.setRowHidden(i, text.lower() not in name_item.text().lower())
+                selected_names.append(name_item.text())
+        return selected_names
 
     def get_selected_experiment_name(self):
         """
         Gets the name of the currently selected experiment in the table.
+        If multiple are selected, returns the first one.
         Returns None if no row is selected.
         """
-        selected_rows = self.exp_table.selectionModel().selectedRows()
-        if not selected_rows:
-            return None
-
-        # Column 1 is the name column
-        name_item = self.exp_table.item(selected_rows[0].row(), 1)
-        return name_item.text() if name_item else None
+        names = self.get_selected_experiment_names()
+        return names[0] if names else None
 
     def select_experiment_by_name(self, name_to_select: str):
         """
@@ -405,8 +490,13 @@ class MainGUI(QMainWindow):
         """
         if not name_to_select:
             return
+
+        name_col = self._get_column_index("Name")
+        if name_col == -1:
+            return
+
         for i in range(self.exp_table.rowCount()):
-            name_item = self.exp_table.item(i, 1)
+            name_item = self.exp_table.item(i, name_col)
             if name_item and name_item.text() == name_to_select:
                 self.exp_table.selectRow(i)
                 break
@@ -424,32 +514,41 @@ class MainGUI(QMainWindow):
 
         self.update_selected_experiment_display()
 
-    def archive_selected_experiment(self):
+    def archive_selected_experiments(self):
         """
-        Deletes (archives) the currently selected experiment.
+        Deletes (archives) the currently selected experiments.
         """
-        exp_name = self.get_selected_experiment_name()
-        if not exp_name:
-            QMessageBox.warning(self, "Action Failed", "No experiment selected.")
+        exp_names = self.get_selected_experiment_names()
+        if not exp_names:
+            QMessageBox.warning(self, "Action Failed", "No experiments selected.")
             return
 
         reply = QMessageBox.question(
             self,
-            "Delete Experiment",
-            f"Are you sure you want to delete '{exp_name}'?\n\n"
-            "This is a soft delete. The experiment will be moved to the archive, "
-            "from where it can be restored or permanently deleted.",
+            f"Archive {len(exp_names)} Experiments",
+            f"Are you sure you want to archive {len(exp_names)} experiments?\n\n"
+            "This is a soft delete. The experiments will be moved to the archive, "
+            "from where they can be restored or permanently deleted.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            success, message = self.manager.archive_experiment(exp_name)
-            if success:
-                QMessageBox.information(self, "Success", message)
-                self.refresh_ui()
-            else:
-                QMessageBox.warning(self, "Error", message)
+            success_count = 0
+            fail_count = 0
+            for name in exp_names:
+                success, _ = self.manager.archive_experiment(name)
+                if success:
+                    success_count += 1
+                else:
+                    fail_count += 1
+
+            summary_message = f"Archived {success_count} experiments."
+            if fail_count > 0:
+                summary_message += f"\nFailed to archive {fail_count} experiments."
+
+            QMessageBox.information(self, "Archive Complete", summary_message)
+            self.refresh_ui()
 
     def open_archive_manager(self):
         """
@@ -464,10 +563,12 @@ class MainGUI(QMainWindow):
         """
         Renames the currently selected experiment.
         """
-        exp_name = self.get_selected_experiment_name()
-        if not exp_name:
-            QMessageBox.warning(self, "Action Failed", "No experiment selected.")
+        exp_names = self.get_selected_experiment_names()
+        if len(exp_names) != 1:
+            QMessageBox.warning(self, "Action Failed", "Please select exactly one experiment to rename.")
             return
+        exp_name = exp_names[0]
+
 
         new_name, ok = QInputDialog.getText(
             self,
@@ -490,10 +591,11 @@ class MainGUI(QMainWindow):
         """
         Clones the currently selected experiment.
         """
-        exp_name = self.get_selected_experiment_name()
-        if not exp_name:
-            QMessageBox.warning(self, "Action Failed", "No experiment selected.")
+        exp_names = self.get_selected_experiment_names()
+        if len(exp_names) != 1:
+            QMessageBox.warning(self, "Action Failed", "Please select exactly one experiment to clone.")
             return
+        exp_name = exp_names[0]
 
         new_name, ok = QInputDialog.getText(
             self,
@@ -516,16 +618,68 @@ class MainGUI(QMainWindow):
         """
         Finds and selects the parent of the currently selected experiment.
         """
-        selected_rows = self.exp_table.selectionModel().selectedRows()
-        if not selected_rows:
-            return
+        exp_names = self.get_selected_experiment_names()
+        if len(exp_names) != 1:
+            return # Silently fail, button should be disabled
+        exp_name = exp_names[0]
 
-        # Column 9 is the parent column
-        parent_item = self.exp_table.item(selected_rows[0].row(), 9)
-        if parent_item and parent_item.text() != "N/A":
-            self.select_experiment_by_name(parent_item.text())
+        config, _ = self.manager.load_experiment_config(exp_name)
+        parent = config.get("parent_experiment") if config else None
+
+        if parent and parent != "N/A":
+            self.select_experiment_by_name(parent)
         else:
             QMessageBox.information(self, "No Parent", "This experiment has no parent.")
+
+    def _clear_comparison(self):
+        """
+        Clears the comparison list and unchecks all associated checkboxes.
+        """
+        self.comparison_list.clear()
+
+        compare_col = self._get_column_index("Compare")
+        if compare_col == -1:
+            return
+
+        # Block signals to avoid triggering _on_compare_checkbox_changed repeatedly
+        self.exp_table.blockSignals(True)
+        for i in range(self.exp_table.rowCount()):
+            cell_widget = self.exp_table.cellWidget(i, compare_col)
+            if cell_widget:
+                check_box = cell_widget.findChild(QCheckBox)
+                if check_box and check_box.isChecked():
+                    check_box.setChecked(False)
+        self.exp_table.blockSignals(False)
+
+        self.update_selected_experiment_display()
+
+    def _compare_all_visible(self):
+        """
+        Adds all currently visible experiments to the comparison list.
+        """
+        compare_col = self._get_column_index("Compare")
+        name_col = self._get_column_index("Name")
+        if compare_col == -1 or name_col == -1:
+            return
+
+        # Block signals to avoid triggering _on_compare_checkbox_changed repeatedly
+        self.exp_table.blockSignals(True)
+        for i in range(self.exp_table.rowCount()):
+            if not self.exp_table.isRowHidden(i):
+                name_item = self.exp_table.item(i, name_col)
+                if name_item:
+                    exp_name = name_item.text()
+                    if exp_name not in self.comparison_list:
+                        self.comparison_list.append(exp_name)
+
+                    cell_widget = self.exp_table.cellWidget(i, compare_col)
+                    if cell_widget:
+                        check_box = cell_widget.findChild(QCheckBox)
+                        if check_box and not check_box.isChecked():
+                            check_box.setChecked(True)
+        self.exp_table.blockSignals(False)
+
+        self.update_selected_experiment_display()
 
 
     def refresh_ui(self):
@@ -546,10 +700,40 @@ class MainGUI(QMainWindow):
         self.plot_widget.clear()
         self.config_display.clear()
 
+        # Update button states related to comparison
+        self.clear_comparison_button.setEnabled(len(self.comparison_list) > 0)
+
+        # Update button states based on selection
+        selected_names = self.get_selected_experiment_names()
+        num_selected = len(selected_names)
+        statuses = self.manager.get_experiment_statuses()
+
+        are_any_running = False
+        are_all_stopped = True
+        if num_selected > 0:
+            selected_statuses = [statuses.get(name) for name in selected_names]
+            are_any_running = any(s == STATUS_RUNNING for s in selected_statuses)
+            are_all_stopped = all(s != STATUS_RUNNING for s in selected_statuses)
+
+        self.clone_button.setEnabled(num_selected == 1 and are_all_stopped)
+        self.rename_button.setEnabled(num_selected == 1 and are_all_stopped)
+        self.delete_button.setEnabled(num_selected > 0 and are_all_stopped)
+        self.stop_button.setEnabled(num_selected > 0 and are_any_running)
+
+        # For single selections, some logic is handled in _display_single_experiment
+        if num_selected != 1:
+            self.select_parent_button.setEnabled(False)
+
         if self.comparison_list:
             self._display_comparison()
-        else:
+        elif num_selected == 1:
             self._display_single_experiment()
+        else:
+            # No selection or multiple selection outside of compare mode
+            self.plot_widget.setTitle("No experiment selected")
+            self.config_display.clear()
+            self.diff_table.setVisible(False)
+
 
     def _display_single_experiment(self):
         """
@@ -558,18 +742,14 @@ class MainGUI(QMainWindow):
         self.diff_table.setVisible(False)
         self.config_display.setVisible(True)
 
-        exp_name = self.get_selected_experiment_name()
-        self._update_metric_selector([exp_name] if exp_name else [])
+        exp_name = self.get_selected_experiment_name() # Should be guaranteed to be one
+        if not exp_name: # Should not happen if called correctly
+            self.plot_widget.setTitle("No experiment selected")
+            return
+
+        self._update_metric_selector([exp_name])
         self.current_train_loss, self.current_test_loss = [], []
 
-        if not exp_name:
-            self.plot_widget.setTitle("No experiment selected")
-            self.stop_button.setEnabled(False)
-            self.clone_button.setEnabled(False)
-            self.rename_button.setEnabled(False)
-            self.delete_button.setEnabled(False)
-            self.select_parent_button.setEnabled(False)
-            return
 
         # Update plot
         results_data, res_error = self.manager.load_experiment_results(exp_name)
@@ -603,15 +783,7 @@ class MainGUI(QMainWindow):
         elif config_data:
             self.config_display.setText(json.dumps(config_data, indent=4))
 
-        # Manage button states
-        statuses = self.manager.get_experiment_statuses()
-        is_running = statuses.get(exp_name) == STATUS_RUNNING
-        self.stop_button.setEnabled(is_running)
-        self.clone_button.setEnabled(not is_running)
-        self.rename_button.setEnabled(not is_running)
-        self.delete_button.setEnabled(not is_running)
-
-        # Enable parent button if parent exists
+        # Manage button states specific to single selection
         parent = config_data.get("parent_experiment") if config_data else None
         self.select_parent_button.setEnabled(bool(parent))
 
@@ -627,12 +799,8 @@ class MainGUI(QMainWindow):
         self.plot_widget.addLegend()
         self.plot_widget.setTitle(f"Comparing {len(self.comparison_list)} experiments")
 
-        # Disable buttons that don't make sense in compare mode
-        self.stop_button.setEnabled(False)
-        self.clone_button.setEnabled(False)
-        self.rename_button.setEnabled(False)
-        self.delete_button.setEnabled(False)
-        self.select_parent_button.setEnabled(False)
+        # Buttons are handled by update_selected_experiment_display
+        self.compare_all_button.setEnabled(True)
 
         colors = ["b", "r", "g", "c", "m", "y", "w"]
         metric_base_name = self.metric_selector.currentText()
@@ -785,21 +953,23 @@ class MainGUI(QMainWindow):
         self.h_line.hide()
         self.plot_label.hide()
 
-    def stop_selected_experiment(self):
+    def stop_selected_experiments(self):
         """
-        Stops the currently selected experiment if it is running.
+        Stops the currently selected running experiments.
         """
-        exp_name = self.get_selected_experiment_name()
-        if not exp_name:
-            # This can be silent as the button should be disabled anyway
+        exp_names = self.get_selected_experiment_names()
+        if not exp_names:
             return
-        if self.manager.stop_experiment(exp_name):
-            print(f"Stop signal sent to experiment: {exp_name}")
-            self.refresh_ui()
-        else:
-            QMessageBox.warning(
-                self, "Error", f"Could not stop {exp_name}. It may not be running."
-            )
+
+        stopped_count = 0
+        for name in exp_names:
+            if self.manager.stop_experiment(name):
+                stopped_count += 1
+
+        if stopped_count > 0:
+            print(f"Stop signal sent to {stopped_count} experiments.")
+            # Give some time for processes to terminate before refreshing
+            QTimer.singleShot(500, self.refresh_ui)
 
     def launch_new_search(self):
         """
