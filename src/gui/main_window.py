@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QCheckBox,
     QComboBox,
+    QInputDialog,
 )
 from PyQt6.QtCore import Qt, QTimer
 
@@ -165,12 +166,18 @@ class MainGUI(QMainWindow):
         self.launch_button.clicked.connect(self.launch_new_experiment)
         self.archive_manager_button = QPushButton("Manage Archives...")
         self.archive_manager_button.clicked.connect(self.open_archive_manager)
+        self.clone_button = QPushButton("Clone")
+        self.clone_button.clicked.connect(self.clone_selected_experiment)
+        self.clone_button.setEnabled(False)
+        self.rename_button = QPushButton("Rename")
+        self.rename_button.clicked.connect(self.rename_selected_experiment)
+        self.rename_button.setEnabled(False)
         self.stop_button = QPushButton("Stop")
         self.stop_button.clicked.connect(self.stop_selected_experiment)
         self.stop_button.setEnabled(False)
-        self.archive_button = QPushButton("Archive")
-        self.archive_button.clicked.connect(self.archive_selected_experiment)
-        self.archive_button.setEnabled(False)
+        self.delete_button = QPushButton("Delete")
+        self.delete_button.clicked.connect(self.archive_selected_experiment)
+        self.delete_button.setEnabled(False)
 
 
         # --- Right Panel ---
@@ -213,7 +220,15 @@ class MainGUI(QMainWindow):
             "Experiments",
             left_content_container,
             self.update_selected_experiment_display,
-            [self.refresh_button, self.launch_button, self.archive_manager_button, self.stop_button, self.archive_button],
+            [
+                self.refresh_button,
+                self.launch_button,
+                self.clone_button,
+                self.rename_button,
+                self.stop_button,
+                self.delete_button,
+                self.archive_manager_button,
+            ],
             right_panel,
         )
 
@@ -373,7 +388,7 @@ class MainGUI(QMainWindow):
 
     def archive_selected_experiment(self):
         """
-        Archives the currently selected experiment.
+        Deletes (archives) the currently selected experiment.
         """
         exp_name = self.get_selected_experiment_name()
         if not exp_name:
@@ -382,9 +397,10 @@ class MainGUI(QMainWindow):
 
         reply = QMessageBox.question(
             self,
-            "Archive Experiment",
-            f"Are you sure you want to archive '{exp_name}'?\n"
-            "This will move its results to the archive folder.",
+            "Delete Experiment",
+            f"Are you sure you want to delete '{exp_name}'?\n\n"
+            "This is a soft delete. The experiment will be moved to the archive, "
+            "from where it can be restored or permanently deleted.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -405,6 +421,58 @@ class MainGUI(QMainWindow):
         dialog.exec()
         # Refresh the main list in case experiments were restored
         self.refresh_ui()
+
+    def rename_selected_experiment(self):
+        """
+        Renames the currently selected experiment.
+        """
+        exp_name = self.get_selected_experiment_name()
+        if not exp_name:
+            QMessageBox.warning(self, "Action Failed", "No experiment selected.")
+            return
+
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename Experiment",
+            f"Enter a new name for '{exp_name}':",
+            QLineEdit.EchoMode.Normal,
+            exp_name,
+        )
+
+        if ok and new_name:
+            success, message = self.manager.rename_experiment(exp_name, new_name)
+            if success:
+                QMessageBox.information(self, "Success", message)
+                self.refresh_ui()
+                self.select_experiment_by_name(new_name)
+            else:
+                QMessageBox.warning(self, "Error", message)
+
+    def clone_selected_experiment(self):
+        """
+        Clones the currently selected experiment.
+        """
+        exp_name = self.get_selected_experiment_name()
+        if not exp_name:
+            QMessageBox.warning(self, "Action Failed", "No experiment selected.")
+            return
+
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Clone Experiment",
+            f"Enter a name for the clone of '{exp_name}':",
+            QLineEdit.EchoMode.Normal,
+            f"{exp_name}_clone",
+        )
+
+        if ok and new_name:
+            success, message = self.manager.clone_experiment(exp_name, new_name)
+            if success:
+                QMessageBox.information(self, "Success", message)
+                self.refresh_ui()
+                self.select_experiment_by_name(new_name)
+            else:
+                QMessageBox.warning(self, "Error", message)
 
 
     def refresh_ui(self):
@@ -442,7 +510,9 @@ class MainGUI(QMainWindow):
         if not exp_name:
             self.plot_widget.setTitle("No experiment selected")
             self.stop_button.setEnabled(False)
-            self.archive_button.setEnabled(False)
+            self.clone_button.setEnabled(False)
+            self.rename_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
             return
 
         # Update plot
@@ -481,7 +551,9 @@ class MainGUI(QMainWindow):
         statuses = self.manager.get_experiment_statuses()
         is_running = statuses.get(exp_name) == STATUS_RUNNING
         self.stop_button.setEnabled(is_running)
-        self.archive_button.setEnabled(True)
+        self.clone_button.setEnabled(not is_running)
+        self.rename_button.setEnabled(not is_running)
+        self.delete_button.setEnabled(not is_running)
 
     def _display_comparison(self):
         """
@@ -497,7 +569,9 @@ class MainGUI(QMainWindow):
 
         # Disable buttons that don't make sense in compare mode
         self.stop_button.setEnabled(False)
-        self.archive_button.setEnabled(False)
+        self.clone_button.setEnabled(False)
+        self.rename_button.setEnabled(False)
+        self.delete_button.setEnabled(False)
 
         colors = ["b", "r", "g", "c", "m", "y", "w"]
         metric_base_name = self.metric_selector.currentText()

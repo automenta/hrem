@@ -52,13 +52,16 @@ class ExperimentManager(BaseProcessManager):
 
         return statuses
 
-    def load_experiment_results(self, exp_name):
+    def load_experiment_results(self, exp_name, base_dir=None):
         """
-        Loads results for an experiment.
+        Loads results for an experiment from a given base directory.
         Returns a tuple: (data, error_message).
         """
-        live_file = os.path.join(self.RESULTS_DIR, exp_name, "live.json")
-        results_file = os.path.join(self.RESULTS_DIR, exp_name, "results.json")
+        if base_dir is None:
+            base_dir = self.RESULTS_DIR
+
+        live_file = os.path.join(base_dir, exp_name, "live.json")
+        results_file = os.path.join(base_dir, exp_name, "results.json")
 
         def _load_json(path):
             try:
@@ -81,12 +84,14 @@ class ExperimentManager(BaseProcessManager):
 
         return None, None  # No results found, but not an error
 
-    def load_experiment_config(self, exp_name):
+    def load_experiment_config(self, exp_name, base_dir=None):
         """
-        Loads the config for a given experiment.
+        Loads the config for a given experiment from a given base directory.
         Returns a tuple: (config_data, error_message).
         """
-        config_file = os.path.join(self.RESULTS_DIR, exp_name, "config.json")
+        if base_dir is None:
+            base_dir = self.RESULTS_DIR
+        config_file = os.path.join(base_dir, exp_name, "config.json")
         if not os.path.exists(config_file):
             return None, "Config file not found."
 
@@ -174,16 +179,7 @@ class ExperimentManager(BaseProcessManager):
         for exp_name in os.listdir(ARCHIVE_DIR):
             exp_path = os.path.join(ARCHIVE_DIR, exp_name)
             if os.path.isdir(exp_path):
-                # We can reuse the main loader, but need to patch the path it looks in
-                # This is a bit of a hack. A better solution might be to pass the base path
-                # to the loading functions. For now, this is simpler.
-                original_results_dir = self.RESULTS_DIR
-                self.RESULTS_DIR = ARCHIVE_DIR
-
-                config, _ = self.load_experiment_config(exp_name)
-                results, _ = self.load_experiment_results(exp_name)
-
-                self.RESULTS_DIR = original_results_dir # Restore path
+                config, _ = self.load_experiment_config(exp_name, base_dir=ARCHIVE_DIR)
 
                 model_name = config.get("model", {}).get("name", "N/A") if config else "N/A"
                 dataset_name = config.get("dataset", {}).get("name", "N/A") if config else "N/A"
@@ -232,3 +228,66 @@ class ExperimentManager(BaseProcessManager):
             return True, f"Experiment {exp_name} permanently deleted."
         except Exception as e:
             return False, f"Error deleting experiment: {e}"
+
+    def rename_experiment(self, old_name: str, new_name: str) -> (bool, str):
+        """
+        Renames an experiment's directory.
+        """
+        if not old_name or not new_name:
+            return False, "Error: Experiment names cannot be empty."
+        if old_name == new_name:
+            return False, "Error: New name is the same as the old name."
+
+        statuses = self.get_experiment_statuses()
+        if statuses.get(old_name) == STATUS_RUNNING:
+            return False, f"Error: Cannot rename a running experiment: {old_name}"
+
+        old_path = os.path.join(self.RESULTS_DIR, old_name)
+        new_path = os.path.join(self.RESULTS_DIR, new_name)
+
+        if not os.path.exists(old_path):
+            return False, f"Error: Experiment to rename not found at {old_path}"
+        if os.path.exists(new_path):
+            return False, f"Error: An experiment with the name {new_name} already exists."
+
+        try:
+            os.rename(old_path, new_path)
+            return True, f"Experiment '{old_name}' renamed to '{new_name}' successfully."
+        except Exception as e:
+            return False, f"Error renaming experiment: {e}"
+
+    def clone_experiment(self, original_name: str, new_name: str) -> (bool, str):
+        """
+        Clones an experiment by copying its config to a new experiment directory.
+        """
+        if not original_name or not new_name:
+            return False, "Error: Experiment names cannot be empty."
+        if original_name == new_name:
+            return False, "Error: New name is the same as the original name."
+
+        original_path = os.path.join(self.RESULTS_DIR, original_name)
+        new_path = os.path.join(self.RESULTS_DIR, new_name)
+
+        if not os.path.exists(original_path):
+            return False, f"Error: Experiment to clone not found at {original_path}"
+        if os.path.exists(new_path):
+            return False, f"Error: An experiment with the name {new_name} already exists."
+
+        original_config_path = os.path.join(original_path, "config.json")
+        if not os.path.exists(original_config_path):
+            return False, f"Error: Config file not found for experiment {original_name}"
+
+        try:
+            os.makedirs(new_path)
+            new_config_path = os.path.join(new_path, "config.json")
+            shutil.copy(original_config_path, new_config_path)
+            # Also update the experiment name within the new config
+            config, err = self.load_experiment_config(new_name)
+            if config and not err:
+                config["experiment_name"] = new_name
+                with open(new_config_path, "w") as f:
+                    json.dump(config, f, indent=4)
+
+            return True, f"Experiment '{original_name}' cloned to '{new_name}' successfully."
+        except Exception as e:
+            return False, f"Error cloning experiment: {e}"
