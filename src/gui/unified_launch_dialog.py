@@ -14,24 +14,24 @@ from PyQt6.QtWidgets import (
     QWidget,
     QListWidget,
     QFileDialog,
+    QGroupBox,
 )
 from PyQt6.QtCore import Qt
 
-# Assuming constants are in a reachable path.
-# If not, these might need to be defined here or passed in.
-# For now, let's define them locally for robustness.
 from .constants import CONFIGS_DIR, BASE_MODELS_DIR
+from .config_editor import ConfigEditor
 
 
 class UnifiedLaunchDialog(QDialog):
     """
     A dialog for launching a new experiment, challenge, or hyperparameter search.
     """
+
     def __init__(self, config=None, exp_name=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Launch New...")
         self.setMinimumWidth(600)
-        self.setMinimumHeight(500)
+        self.setMinimumHeight(700)  # Increased height for better layout
 
         self.launch_info = None
         self.challenger_config_path = None
@@ -40,9 +40,12 @@ class UnifiedLaunchDialog(QDialog):
         self._on_run_type_changed(self.run_type_selector.currentText())
 
         if config:
-            self.config_editor.setText(json.dumps(config, indent=4))
+            self.config_editor.set_config(config)
         if exp_name:
             self.exp_name_input.setText(exp_name)
+
+        self._update_json_preview()
+
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -58,7 +61,9 @@ class UnifiedLaunchDialog(QDialog):
         type_layout = QHBoxLayout()
         type_layout.addWidget(QLabel("Run Type:"))
         self.run_type_selector = QComboBox()
-        self.run_type_selector.addItems(["Single Run", "Challenge", "Hyperparameter Search"])
+        self.run_type_selector.addItems(
+            ["Single Run", "Challenge", "Hyperparameter Search"]
+        )
         self.run_type_selector.currentTextChanged.connect(self._on_run_type_changed)
         type_layout.addWidget(self.run_type_selector)
         type_layout.addStretch()
@@ -83,15 +88,31 @@ class UnifiedLaunchDialog(QDialog):
         layout.addLayout(button_box)
 
     def _create_standard_panel(self):
-        """Creates the panel for single runs and searches, which use a JSON editor."""
+        """Creates the panel for single runs and searches, which use a form-based editor."""
         self.standard_panel = QWidget()
         layout = QVBoxLayout(self.standard_panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Configuration (JSON):"))
-        self.config_editor = QTextEdit()
-        self.config_editor.setFontFamily("monospace")
+
+        self.config_editor = ConfigEditor()
+        self.config_editor.config_changed.connect(self._update_json_preview)
         layout.addWidget(self.config_editor)
+
+        # --- Live JSON Preview ---
+        self.json_preview_group = QGroupBox("Live JSON Preview")
+        self.json_preview_group.setCheckable(True)
+        self.json_preview_group.setChecked(False)
+        preview_layout = QVBoxLayout(self.json_preview_group)
+        self.json_preview = QTextEdit()
+        self.json_preview.setReadOnly(True)
+        self.json_preview.setFontFamily("monospace")
+        preview_layout.addWidget(self.json_preview)
+        layout.addWidget(self.json_preview_group)
+
         self.main_panel.addWidget(self.standard_panel)
+
+    def _update_json_preview(self):
+        config = self.config_editor.get_config()
+        self.json_preview.setText(json.dumps(config, indent=4))
 
     def _create_challenge_panel(self):
         """Creates the panel for launching a challenge."""
@@ -177,32 +198,35 @@ class UnifiedLaunchDialog(QDialog):
 
         if run_type == "Challenge":
             if not self.challenger_config_path:
-                QMessageBox.warning(self, "Validation Error", "You must select a challenger model config.")
+                QMessageBox.warning(
+                    self, "Validation Error", "You must select a challenger model config."
+                )
                 return
             if self.baseline_list.count() == 0:
-                QMessageBox.warning(self, "Validation Error", "You must select at least one baseline model.")
+                QMessageBox.warning(
+                    self,
+                    "Validation Error",
+                    "You must select at least one baseline model.",
+                )
                 return
 
-            baselines = [self.baseline_list.item(i).text() for i in range(self.baseline_list.count())]
+            baselines = [
+                self.baseline_list.item(i).text()
+                for i in range(self.baseline_list.count())
+            ]
             self.launch_info = {
                 "type": "Challenge",
                 "base_name": name,
                 "challenger_config": self.challenger_config_path,
                 "baselines": baselines,
             }
-        else: # Single Run or Hyperparameter Search
-            try:
-                config_text = self.config_editor.toPlainText()
-                if not config_text.strip():
-                    QMessageBox.warning(self, "Validation Error", "Configuration cannot be empty.")
-                    return
-                config = json.loads(config_text)
-            except json.JSONDecodeError as e:
-                QMessageBox.warning(self, "Validation Error", f"Invalid JSON in configuration: {e}")
-                return
+        else:  # Single Run or Hyperparameter Search
+            config = self.config_editor.get_config()
 
             # Add experiment name to config, as this is expected by the runner
-            config['experiment_name'] = name
+            config["experiment_name"] = name
+
+            # TODO: Add validation for the generated config fields
 
             self.launch_info = {
                 "config": config,
