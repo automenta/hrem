@@ -82,7 +82,9 @@ def main(config_path):
             print("Error: 'search' section not found in the configuration file.")
             return
 
-        study = optuna.create_study(direction=search_settings.get("direction", "minimize"))
+        study = optuna.create_study(
+            direction=search_settings.get("direction", "minimize")
+        )
         obj_fn = partial(objective, base_config=config)
         study.optimize(obj_fn, n_trials=search_settings.get("n_trials", 20))
 
@@ -104,7 +106,9 @@ def main(config_path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run a training experiment or a hyperparameter search.")
+    parser = argparse.ArgumentParser(
+        description="Run a training experiment or a hyperparameter search."
+    )
     parser.add_argument("config", type=str, help="Path to the JSON configuration file.")
     args = parser.parse_args()
 

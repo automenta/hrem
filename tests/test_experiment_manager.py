@@ -1,11 +1,10 @@
 import os
 import json
-import time
 import pytest
 from unittest.mock import patch
 
 from src.gui.experiment_manager import ExperimentManager
-from src.gui.constants import RESULTS_DIR, ARCHIVE_DIR
+
 
 # Fixture to create a temporary directory structure for testing
 @pytest.fixture
@@ -19,7 +18,9 @@ def temp_experiment_dirs(tmp_path):
     exp1_dir = results_dir / "exp1"
     exp1_dir.mkdir()
     with open(exp1_dir / "config.json", "w") as f:
-        json.dump({"model": {"name": "test_model"}, "dataset": {"name": "test_dataset"}}, f)
+        json.dump(
+            {"model": {"name": "test_model"}, "dataset": {"name": "test_dataset"}}, f
+        )
     with open(exp1_dir / "results.json", "w") as f:
         json.dump({"test_loss": [0.1, 0.05]}, f)
 
@@ -27,11 +28,15 @@ def temp_experiment_dirs(tmp_path):
     arch_exp1_dir = archive_dir / "arch_exp1"
     arch_exp1_dir.mkdir()
     with open(arch_exp1_dir / "config.json", "w") as f:
-        json.dump({"model": {"name": "arch_model"}, "dataset": {"name": "arch_dataset"}}, f)
+        json.dump(
+            {"model": {"name": "arch_model"}, "dataset": {"name": "arch_dataset"}}, f
+        )
 
-    with patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir)), \
-         patch("src.gui.experiment_manager.ARCHIVE_DIR", str(archive_dir)):
+    with patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir)), patch(
+        "src.gui.experiment_manager.ARCHIVE_DIR", str(archive_dir)
+    ):
         yield str(results_dir), str(archive_dir)
+
 
 def test_load_experiment_config(temp_experiment_dirs):
     results_dir, _ = temp_experiment_dirs
@@ -46,6 +51,7 @@ def test_load_experiment_config(temp_experiment_dirs):
     assert err is None
     assert config["model"]["name"] == "test_model"
 
+
 def test_load_experiment_results(temp_experiment_dirs):
     results_dir, _ = temp_experiment_dirs
     manager = ExperimentManager()
@@ -58,12 +64,14 @@ def test_load_experiment_results(temp_experiment_dirs):
     assert err is None
     assert results["test_loss"] == [0.1, 0.05]
 
+
 def test_get_experiments_data(temp_experiment_dirs):
     manager = ExperimentManager()
     data = manager.get_experiments_data()
     assert len(data) == 1
     assert data[0]["name"] == "exp1"
     assert data[0]["model"] == "test_model"
+
 
 def test_get_archived_experiments_data(temp_experiment_dirs):
     manager = ExperimentManager()
@@ -72,6 +80,7 @@ def test_get_archived_experiments_data(temp_experiment_dirs):
     assert data[0]["name"] == "arch_exp1"
     assert data[0]["model"] == "arch_model"
     # This proves the refactoring works, as it's reading from the archive dir
+
 
 def test_archive_and_restore_experiment(temp_experiment_dirs):
     manager = ExperimentManager()
@@ -92,6 +101,7 @@ def test_archive_and_restore_experiment(temp_experiment_dirs):
     assert len(manager.get_experiments_data()) == 1
     assert len(manager.get_archived_experiments_data()) == 1
 
+
 def test_delete_experiment_permanently(temp_experiment_dirs):
     manager = ExperimentManager()
 
@@ -102,6 +112,7 @@ def test_delete_experiment_permanently(temp_experiment_dirs):
     success, msg = manager.delete_experiment_permanently("arch_exp1")
     assert success
     assert len(manager.get_archived_experiments_data()) == 0
+
 
 def test_rename_experiment(temp_experiment_dirs):
     results_dir, _ = temp_experiment_dirs
@@ -121,6 +132,7 @@ def test_rename_experiment(temp_experiment_dirs):
     os.mkdir(os.path.join(results_dir, "exp2"))
     success, msg = manager.rename_experiment("exp1_renamed", "exp2")
     assert not success
+
 
 def test_clone_experiment(temp_experiment_dirs):
     results_dir, _ = temp_experiment_dirs

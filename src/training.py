@@ -138,22 +138,20 @@ class Trainer:
         self.logger.save_results()
         return self.logger.get_final_metrics()
 
-    def _train_epoch(self, pbar):
-        self.model.train()
-        total_loss = 0
+    def _forward_pass_and_loss(self, batch):
+        """
+        Performs a forward pass and computes the loss for a given batch.
+        Works for both standard and ACT models.
+        """
+        x, y = batch["inputs"], batch["targets"]
         is_act_model = isinstance(self.model, (HRM, HREM))
 
-        for x, y in pbar:
-            x, y = x.to(self.device), y.to(self.device)
-            batch = {"inputs": x, "targets": y}
-            self.optimizer.zero_grad()
-
-            if is_act_model:
-                carry = self.model.initial_carry(batch)
-                batch_total_loss = 0
-
-                while True:
-                    # Detach carry for BPTT. Handle both HRM and HREM carry structures.
+        if is_act_model:
+            carry = self.model.initial_carry(batch)
+            total_loss = 0
+            while True:
+                if self.model.training:
+                    # Detach carry for BPTT.
                     if isinstance(carry, tuple):  # HREM
                         hrm_carry, mem_states = carry
                         if hrm_carry.inner_carry.z_H is not None:
@@ -177,44 +175,54 @@ class Trainer:
                             )
                         carry = hrm_carry
 
-                    carry, outputs = self.model(carry, batch)
+                carry, outputs = self.model(carry, batch)
+                logits = outputs.get("logits")
 
-                    logits = outputs.get("logits")
-                    if self.config["dataset"]["name"] == "tiny_shakespeare":
-                        task_loss = self.criterion(
-                            logits.reshape(-1, logits.size(-1)), y.reshape(-1)
-                        )
-                    else:
-                        task_loss = self.criterion(logits, y)
-
-                    act_loss = 0
-                    if "target_q_continue" in outputs:
-                        act_loss = torch.nn.BCEWithLogitsLoss()(
-                            outputs["q_continue_logits"], outputs["target_q_continue"]
-                        )
-
-                    batch_total_loss += task_loss + act_loss
-
-                    if (isinstance(carry, tuple) and carry[0].halted.all()) or (
-                        not isinstance(carry, tuple) and carry.halted.all()
-                    ):
-                        break
-
-                loss = batch_total_loss
-                loss.backward()
-                final_loss_val = loss.item()
-
-            else:  # Standard models
-                outputs = self.model(batch)
-                logits = outputs.get("logits", outputs)
                 if self.config["dataset"]["name"] == "tiny_shakespeare":
-                    loss = self.criterion(
+                    task_loss = self.criterion(
                         logits.reshape(-1, logits.size(-1)), y.reshape(-1)
                     )
                 else:
-                    loss = self.criterion(logits, y)
-                loss.backward()
-                final_loss_val = loss.item()
+                    task_loss = self.criterion(logits, y)
+
+                act_loss = 0
+                if "target_q_continue" in outputs:
+                    act_loss = torch.nn.BCEWithLogitsLoss()(
+                        outputs["q_continue_logits"], outputs["target_q_continue"]
+                    )
+
+                total_loss += task_loss + act_loss
+
+                halt_condition = (
+                    isinstance(carry, tuple) and carry[0].halted.all()
+                ) or (not isinstance(carry, tuple) and carry.halted.all())
+                if halt_condition:
+                    break
+            return total_loss
+        else:  # Standard models
+            outputs = self.model(batch)
+            logits = outputs.get("logits", outputs)
+            if self.config["dataset"]["name"] == "tiny_shakespeare":
+                loss = self.criterion(
+                    logits.reshape(-1, logits.size(-1)), y.reshape(-1)
+                )
+            else:
+                loss = self.criterion(logits, y)
+            return loss
+
+    def _train_epoch(self, pbar):
+        self.model.train()
+        total_loss = 0
+
+        for x, y in pbar:
+            x, y = x.to(self.device), y.to(self.device)
+            batch = {"inputs": x, "targets": y}
+
+            self.optimizer.zero_grad()
+
+            loss = self._forward_pass_and_loss(batch)
+
+            loss.backward()
 
             if self.grad_clip_norm:
                 torch.nn.utils.clip_grad_norm_(
@@ -222,58 +230,21 @@ class Trainer:
                 )
             self.optimizer.step()
 
-            total_loss += final_loss_val
-            pbar.set_postfix({"loss": final_loss_val})
+            total_loss += loss.item()
+            pbar.set_postfix({"loss": loss.item()})
 
         return total_loss / len(self.train_loader)
 
     def _evaluate(self):
         self.model.eval()
         total_loss = 0
-        is_act_model = isinstance(self.model, (HRM, HREM))
 
         with torch.no_grad():
             for x, y in self.test_loader:
                 x, y = x.to(self.device), y.to(self.device)
                 batch = {"inputs": x, "targets": y}
 
-                if is_act_model:
-                    carry = self.model.initial_carry(batch)
-                    batch_total_loss = 0
-                    while True:
-                        carry, outputs = self.model(carry, batch)
-                        logits = outputs.get("logits")
-                        if self.config["dataset"]["name"] == "tiny_shakespeare":
-                            task_loss = self.criterion(
-                                logits.reshape(-1, logits.size(-1)), y.reshape(-1)
-                            )
-                        else:
-                            task_loss = self.criterion(logits, y)
+                loss = self._forward_pass_and_loss(batch)
+                total_loss += loss.item()
 
-                        act_loss = 0
-                        if "target_q_continue" in outputs:
-                            act_loss = torch.nn.BCEWithLogitsLoss()(
-                                outputs["q_continue_logits"],
-                                outputs["target_q_continue"],
-                            )
-
-                        batch_total_loss += (task_loss + act_loss).item()
-
-                        if (isinstance(carry, tuple) and carry[0].halted.all()) or (
-                            not isinstance(carry, tuple) and carry.halted.all()
-                        ):
-                            break
-                    final_loss_val = batch_total_loss
-                else:
-                    outputs = self.model(batch)
-                    logits = outputs.get("logits", outputs)
-                    if self.config["dataset"]["name"] == "tiny_shakespeare":
-                        loss = self.criterion(
-                            logits.reshape(-1, logits.size(-1)), y.reshape(-1)
-                        )
-                    else:
-                        loss = self.criterion(logits, y)
-                    final_loss_val = loss.item()
-
-                total_loss += final_loss_val
         return total_loss / len(self.test_loader)

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget,
     QHBoxLayout,
@@ -73,7 +73,9 @@ class ChallengeView(QWidget):
         Refreshes the view by fetching the latest experiment data and regrouping races.
         """
         current_selection = (
-            self.race_list.currentItem().text() if self.race_list.currentItem() else None
+            self.race_list.currentItem().text()
+            if self.race_list.currentItem()
+            else None
         )
 
         experiments = self.manager.get_experiments_data()
@@ -85,12 +87,13 @@ class ChallengeView(QWidget):
 
         # Restore selection
         if current_selection:
-            items = self.race_list.findItems(current_selection, Qt.MatchFlag.MatchExactly)
+            items = self.race_list.findItems(
+                current_selection, Qt.MatchFlag.MatchExactly
+            )
             if items:
                 self.race_list.setCurrentItem(items[0])
 
         self.display_race_details()
-
 
     def _group_experiments_by_race(self, experiments: list) -> dict:
         """
@@ -102,7 +105,7 @@ class ChallengeView(QWidget):
             if race_id and race_id != "N/A":
                 if exp.get("is_baseline_for"):
                     races[race_id]["baselines"].append(exp)
-                else: # This is the challenger
+                else:  # This is the challenger
                     races[race_id]["challenger"] = exp
         return races
 
@@ -135,7 +138,8 @@ class ChallengeView(QWidget):
         # --- Plotting ---
         colors = ["b", "r", "g", "c", "m", "y", "w"]
         for i, participant in enumerate(all_participants):
-            if not participant: continue
+            if not participant:
+                continue
             results, _ = self.manager.load_experiment_results(participant["name"])
             if results and "test_loss" in results:
                 color = colors[i % len(colors)]
@@ -153,7 +157,8 @@ class ChallengeView(QWidget):
         self.results_table.setRowCount(len(all_participants))
 
         for row, p in enumerate(all_participants):
-            if not p: continue
+            if not p:
+                continue
             self.results_table.setItem(row, 0, QTableWidgetItem(p["name"]))
             self.results_table.setItem(row, 1, QTableWidgetItem(p["model"]))
             self.results_table.setItem(row, 2, QTableWidgetItem(p["status"]))

@@ -180,8 +180,7 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
         if self.config.pos_encodings == "rope":
             self.rotary_emb = RotaryEmbedding(
                 dim=self.config.hidden_size // self.config.num_heads,
-                max_position_embeddings=self.config.seq_len
-                + self.puzzle_emb_len,
+                max_position_embeddings=self.config.seq_len + self.puzzle_emb_len,
                 base=self.config.rope_theta,
                 dtype=self.forward_dtype,
             )
@@ -289,7 +288,9 @@ class HierarchicalReasoningModel_ACTV1_Inner(nn.Module):
         batch: Dict[str, torch.Tensor],
         memory_readout: Optional[torch.Tensor] = None,
     ) -> Tuple[
-        HierarchicalReasoningModel_ACTV1InnerCarry, torch.Tensor, Tuple[torch.Tensor, torch.Tensor]
+        HierarchicalReasoningModel_ACTV1InnerCarry,
+        torch.Tensor,
+        Tuple[torch.Tensor, torch.Tensor],
     ]:
         z_H_full, z_L_full = carry.z_H, carry.z_L
         current_seq_len = batch["inputs"].shape[1] + self.puzzle_emb_len

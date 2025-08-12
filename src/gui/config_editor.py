@@ -15,10 +15,12 @@ from PyQt6.QtCore import pyqtSignal
 
 from src.factories import MODEL_REGISTRY, DATASET_REGISTRY
 
+
 class ConfigEditor(QWidget):
     """
     A widget for editing experiment configurations in a form-based manner.
     """
+
     config_changed = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -53,7 +55,6 @@ class ConfigEditor(QWidget):
         self.dataset_params_layout = QFormLayout()
         dataset_group_layout.addLayout(self.dataset_params_layout)
         main_layout.addWidget(dataset_group)
-
 
         # --- Training Parameters ---
         training_group = QGroupBox("Training")
@@ -98,16 +99,22 @@ class ConfigEditor(QWidget):
                 continue
 
             widget = None
-            default_value = param.default if param.default is not inspect.Parameter.empty else ""
+            default_value = (
+                param.default if param.default is not inspect.Parameter.empty else ""
+            )
 
             # Try to infer widget type from default value type or annotation
-            param_type = param.annotation if param.annotation is not inspect.Parameter.empty else type(default_value)
+            param_type = (
+                param.annotation
+                if param.annotation is not inspect.Parameter.empty
+                else type(default_value)
+            )
 
             if param_type is bool:
                 widget = QCheckBox()
                 widget.setChecked(bool(default_value))
                 widget.stateChanged.connect(self.config_changed)
-            else: # Default to QLineEdit
+            else:  # Default to QLineEdit
                 widget = QLineEdit(str(default_value))
                 widget.textChanged.connect(self.config_changed)
 
@@ -116,9 +123,9 @@ class ConfigEditor(QWidget):
                 doc = inspect.getdoc(component_class.__init__)
                 if doc:
                     # Simple parsing to find param docstring (this is brittle)
-                    for line in doc.split('\n'):
+                    for line in doc.split("\n"):
                         if line.strip().startswith(f":param {name}"):
-                            widget.setToolTip(line.split(':', 2)[-1].strip())
+                            widget.setToolTip(line.split(":", 2)[-1].strip())
                             break
 
                 layout.addRow(f"{name}:", widget)
@@ -130,8 +137,12 @@ class ConfigEditor(QWidget):
             "training": {},
         }
 
-        self._get_params_from_layout(self.model_params_layout, config["model"]["params"])
-        self._get_params_from_layout(self.dataset_params_layout, config["dataset"]["params"])
+        self._get_params_from_layout(
+            self.model_params_layout, config["model"]["params"]
+        )
+        self._get_params_from_layout(
+            self.dataset_params_layout, config["dataset"]["params"]
+        )
         self._get_params_from_layout(self.training_params_layout, config["training"])
 
         return config
@@ -140,7 +151,12 @@ class ConfigEditor(QWidget):
         for i in range(0, layout.count(), 2):
             label_item = layout.itemAt(i)
             field_item = layout.itemAt(i + 1)
-            if label_item and label_item.widget() and field_item and field_item.widget():
+            if (
+                label_item
+                and label_item.widget()
+                and field_item
+                and field_item.widget()
+            ):
                 label_widget = label_item.widget()
                 field_widget = field_item.widget()
                 key = label_widget.text().replace(":", "").lower().replace(" ", "_")
@@ -159,11 +175,11 @@ class ConfigEditor(QWidget):
                     return float(text)
                 except ValueError:
                     # Handle lists/tuples
-                    if text.startswith('(') and text.endswith(')'):
-                        return tuple(map(int, text[1:-1].split(',')))
-                    if text.startswith('[') and text.endswith(']'):
-                         return list(map(int, text[1:-1].split(',')))
-                    return text # It's just a string
+                    if text.startswith("(") and text.endswith(")"):
+                        return tuple(map(int, text[1:-1].split(",")))
+                    if text.startswith("[") and text.endswith("]"):
+                        return list(map(int, text[1:-1].split(",")))
+                    return text  # It's just a string
         return None
 
     def set_config(self, config: dict):
@@ -171,15 +187,23 @@ class ConfigEditor(QWidget):
         model_config = config.get("model", {})
         if model_config.get("name"):
             self.model_combo.setCurrentText(model_config["name"])
-            self._update_params_layout(self.model_params_layout, MODEL_REGISTRY.get(model_config["name"]))
-            self._set_layout_values(self.model_params_layout, model_config.get("params", {}))
+            self._update_params_layout(
+                self.model_params_layout, MODEL_REGISTRY.get(model_config["name"])
+            )
+            self._set_layout_values(
+                self.model_params_layout, model_config.get("params", {})
+            )
 
         # Set dataset
         dataset_config = config.get("dataset", {})
         if dataset_config.get("name"):
             self.dataset_combo.setCurrentText(dataset_config["name"])
-            self._update_params_layout(self.dataset_params_layout, DATASET_REGISTRY.get(dataset_config["name"]))
-            self._set_layout_values(self.dataset_params_layout, dataset_config.get("params", {}))
+            self._update_params_layout(
+                self.dataset_params_layout, DATASET_REGISTRY.get(dataset_config["name"])
+            )
+            self._set_layout_values(
+                self.dataset_params_layout, dataset_config.get("params", {})
+            )
 
         # Set training params
         self._set_layout_values(self.training_params_layout, config.get("training", {}))
@@ -190,7 +214,12 @@ class ConfigEditor(QWidget):
         for i in range(0, layout.count(), 2):
             label_item = layout.itemAt(i)
             field_item = layout.itemAt(i + 1)
-            if label_item and label_item.widget() and field_item and field_item.widget():
+            if (
+                label_item
+                and label_item.widget()
+                and field_item
+                and field_item.widget()
+            ):
                 label_widget = label_item.widget()
                 field_widget = field_item.widget()
                 key = label_widget.text().replace(":", "").lower().replace(" ", "_")

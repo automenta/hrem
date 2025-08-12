@@ -14,6 +14,7 @@ class LogViewWidget(QWidget):
     """
     A widget that displays the logs for a single experiment.
     """
+
     def __init__(self, exp_name, log_content, parent=None):
         super().__init__(parent)
         self.exp_name = exp_name
@@ -47,10 +48,11 @@ class LogDeckWindow(QWidget):
     """
     A non-modal window for displaying multiple experiment logs side-by-side.
     """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Log Deck")
-        self.setWindowFlags(Qt.WindowType.Window) # Make it a separate window
+        self.setWindowFlags(Qt.WindowType.Window)  # Make it a separate window
         self.setGeometry(150, 150, 1000, 600)
 
         self.active_logs = {}  # {exp_name: widget}

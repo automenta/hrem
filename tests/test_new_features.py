@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from src.gui.experiment_manager import ExperimentManager
 
+
 # Fixture to create a temporary directory structure for testing
 @pytest.fixture
 def temp_experiment_dirs(tmp_path):
@@ -24,14 +25,16 @@ def temp_experiment_dirs(tmp_path):
         "experiment_name": "exp1",
         "model": {"name": "test_model"},
         "dataset": {"name": "test_dataset", "params": {}},
-        "training": {"epochs": 1, "learning_rate": 0.01}
+        "training": {"epochs": 1, "learning_rate": 0.01},
     }
     with open(exp1_dir / "config.json", "w") as f:
         json.dump(config_data, f)
 
-    with patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir)), \
-         patch("src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)):
+    with patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir)), patch(
+        "src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)
+    ):
         yield str(results_dir)
+
 
 def test_clone_experiment_tracks_parent(temp_experiment_dirs):
     manager = ExperimentManager()
@@ -44,6 +47,7 @@ def test_clone_experiment_tracks_parent(temp_experiment_dirs):
     config, err = manager.load_experiment_config("exp1_clone")
     assert err is None
     assert config["parent_experiment"] == "exp1"
+
 
 def test_get_experiment_graph(temp_experiment_dirs):
     results_dir = temp_experiment_dirs
@@ -69,6 +73,7 @@ def test_get_experiment_graph(temp_experiment_dirs):
     assert set(graph["nodes"].keys()) == {"exp1", "exp2", "exp3", "exp4", "exp5"}
     assert set(graph["roots"]) == {"exp1", "exp5"}
     assert set(graph["edges"]) == {("exp1", "exp2"), ("exp1", "exp3"), ("exp3", "exp4")}
+
 
 @patch("src.gui.experiment_manager.BaseProcessManager.launch_process")
 def test_launch_experiment_race(mock_launch, temp_experiment_dirs):

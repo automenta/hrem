@@ -127,7 +127,7 @@ class TrajectoryView(QWidget):
                 level_counts[level] = 0
 
             x = level * 180  # Horizontal spacing
-            y = level_counts[level] * 70 # Vertical spacing
+            y = level_counts[level] * 70  # Vertical spacing
             positions[node_name] = QPointF(x, y)
 
             level_counts[level] += 1

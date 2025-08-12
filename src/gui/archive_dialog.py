@@ -31,7 +31,9 @@ class ArchiveManagerDialog(QDialog):
         layout = QVBoxLayout(self)
 
         self.archive_table = QTableWidget()
-        self.archive_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.archive_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
         self.archive_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.archive_table.verticalHeader().setVisible(False)
         header = self.archive_table.horizontalHeader()
@@ -76,7 +78,9 @@ class ArchiveManagerDialog(QDialog):
     def restore_selected(self):
         exp_name = self.get_selected_experiment_name()
         if not exp_name:
-            QMessageBox.warning(self, "No Selection", "Please select an experiment to restore.")
+            QMessageBox.warning(
+                self, "No Selection", "Please select an experiment to restore."
+            )
             return
 
         success, message = self.manager.restore_experiment(exp_name)
@@ -89,7 +93,9 @@ class ArchiveManagerDialog(QDialog):
     def delete_selected(self):
         exp_name = self.get_selected_experiment_name()
         if not exp_name:
-            QMessageBox.warning(self, "No Selection", "Please select an experiment to delete.")
+            QMessageBox.warning(
+                self, "No Selection", "Please select an experiment to delete."
+            )
             return
 
         reply = QMessageBox.question(

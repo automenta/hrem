@@ -47,9 +47,7 @@ def get_dataset(config: dict):
             size=dataset_params["test_size"], seq_len=dataset_params["seq_len"]
         )
     elif dataset_name == "tiny_shakespeare":
-        train_ds = dataset_class(
-            seq_length=dataset_params["seq_length"], split="train"
-        )
+        train_ds = dataset_class(seq_length=dataset_params["seq_length"], split="train")
         test_ds = dataset_class(seq_length=dataset_params["seq_length"], split="test")
     elif dataset_name == "copy":
         train_ds = dataset_class(

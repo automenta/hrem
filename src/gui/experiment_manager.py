@@ -162,7 +162,7 @@ class ExperimentManager(BaseProcessManager):
                     "%Y-%m-%d %H:%M"
                 )
             except FileNotFoundError:
-                pass # Exp might not have a directory yet
+                pass  # Exp might not have a directory yet
 
             experiments_data.append(
                 {
@@ -215,22 +215,30 @@ class ExperimentManager(BaseProcessManager):
             if os.path.isdir(exp_path):
                 config, _ = self.load_experiment_config(exp_name, base_dir=ARCHIVE_DIR)
 
-                model_name = config.get("model", {}).get("name", "N/A") if config else "N/A"
-                dataset_name = config.get("dataset", {}).get("name", "N/A") if config else "N/A"
+                model_name = (
+                    config.get("model", {}).get("name", "N/A") if config else "N/A"
+                )
+                dataset_name = (
+                    config.get("dataset", {}).get("name", "N/A") if config else "N/A"
+                )
 
                 creation_time = "N/A"
                 try:
                     timestamp = os.path.getctime(exp_path)
-                    creation_time = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M")
+                    creation_time = datetime.fromtimestamp(timestamp).strftime(
+                        "%Y-%m-%d %H:%M"
+                    )
                 except FileNotFoundError:
                     pass
 
-                archived_experiments.append({
-                    "name": exp_name,
-                    "model": model_name,
-                    "dataset": dataset_name,
-                    "created": creation_time,
-                })
+                archived_experiments.append(
+                    {
+                        "name": exp_name,
+                        "model": model_name,
+                        "dataset": dataset_name,
+                        "created": creation_time,
+                    }
+                )
         return archived_experiments
 
     def restore_experiment(self, exp_name: str) -> (bool, str):
@@ -282,11 +290,17 @@ class ExperimentManager(BaseProcessManager):
         if not os.path.exists(old_path):
             return False, f"Error: Experiment to rename not found at {old_path}"
         if os.path.exists(new_path):
-            return False, f"Error: An experiment with the name {new_name} already exists."
+            return (
+                False,
+                f"Error: An experiment with the name {new_name} already exists.",
+            )
 
         try:
             os.rename(old_path, new_path)
-            return True, f"Experiment '{old_name}' renamed to '{new_name}' successfully."
+            return (
+                True,
+                f"Experiment '{old_name}' renamed to '{new_name}' successfully.",
+            )
         except Exception as e:
             return False, f"Error renaming experiment: {e}"
 
@@ -305,7 +319,10 @@ class ExperimentManager(BaseProcessManager):
         if not os.path.exists(original_path):
             return False, f"Error: Experiment to clone not found at {original_path}"
         if os.path.exists(new_path):
-            return False, f"Error: An experiment with the name {new_name} already exists."
+            return (
+                False,
+                f"Error: An experiment with the name {new_name} already exists.",
+            )
 
         original_config_path = os.path.join(original_path, "config.json")
         if not os.path.exists(original_config_path):
@@ -324,7 +341,10 @@ class ExperimentManager(BaseProcessManager):
                 with open(new_config_path, "w") as f:
                     json.dump(config, f, indent=4)
 
-            return True, f"Experiment '{original_name}' cloned to '{new_name}' successfully."
+            return (
+                True,
+                f"Experiment '{original_name}' cloned to '{new_name}' successfully.",
+            )
         except Exception as e:
             return False, f"Error cloning experiment: {e}"
 
@@ -388,7 +408,9 @@ class ExperimentManager(BaseProcessManager):
                 baseline_config.put("dataset", challenger_config.get("dataset"))
 
                 # Load the base model config
-                base_model_config_path = os.path.join(BASE_MODELS_DIR, f"{baseline_model_name}.json")
+                base_model_config_path = os.path.join(
+                    BASE_MODELS_DIR, f"{baseline_model_name}.json"
+                )
                 base_model_config = ConfigFactory.parse_file(base_model_config_path)
                 baseline_config.put("model", base_model_config)
 
@@ -397,11 +419,13 @@ class ExperimentManager(BaseProcessManager):
                 baseline_config.put("race_id", race_id)
                 baseline_config.put("is_baseline_for", challenger_exp_name)
 
-                self._prepare_and_launch_exp(baseline_exp_name, baseline_config, "main.py")
+                self._prepare_and_launch_exp(
+                    baseline_exp_name, baseline_config, "main.py"
+                )
 
             except Exception as e:
                 print(f"Failed to create/launch baseline {baseline_model_name}: {e}")
-                continue # Continue to the next baseline
+                continue  # Continue to the next baseline
 
         return True, f"Experiment race '{base_name}' launched successfully."
 
@@ -459,22 +483,23 @@ class ExperimentManager(BaseProcessManager):
         except Exception as e:
             return False, f"Failed to launch search {exp_name}: {e}"
 
-
     def get_plottable_metrics(self):
         """
         Returns a list of metrics that can be used for plotting in the analysis view.
         This includes a mix of flattened config keys and result metrics.
         """
         # This can be expanded or made dynamic in the future
-        return sorted([
-            "results.final_loss",
-            "results.params",
-            "results.epoch_time",
-            "config.training.learning_rate",
-            "config.training.batch_size",
-            "config.model.params.hidden_dim",
-            "config.model.params.n_layers",
-        ])
+        return sorted(
+            [
+                "results.final_loss",
+                "results.params",
+                "results.epoch_time",
+                "config.training.learning_rate",
+                "config.training.batch_size",
+                "config.model.params.hidden_dim",
+                "config.model.params.n_layers",
+            ]
+        )
 
     def get_log_contents(self, exp_name: str) -> str:
         """

@@ -15,10 +15,12 @@ from sklearn.preprocessing import StandardScaler
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QAction
 
+
 class CustomPlotWidget(pg.PlotWidget):
     """
     A custom PlotWidget that handles context menus for the scatter plot view.
     """
+
     def __init__(self, parent_view, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.parent_view = parent_view
@@ -45,10 +47,12 @@ class CustomPlotWidget(pg.PlotWidget):
         # Since PlotWidget itself doesn't implement contextMenuEvent, we pass it to the PlotItem.
         self.getPlotItem().contextMenuEvent(event)
 
+
 class ScatterPlotView(QWidget):
     """
     A widget for visualizing experiments as a 2D scatter plot.
     """
+
     experiment_selected = pyqtSignal(str)
     experiments_selected_for_filtering = pyqtSignal(list)
 
@@ -56,7 +60,7 @@ class ScatterPlotView(QWidget):
         super().__init__(parent)
         self.manager = manager
         self.selected_points = []
-        self.all_points_data = [] # To store the raw data for all points
+        self.all_points_data = []  # To store the raw data for all points
 
         self._init_ui()
         self._populate_selectors()
@@ -73,16 +77,15 @@ class ScatterPlotView(QWidget):
         """
         self.selected_points = []
         for point in self.all_points_data:
-            if point['data'] == name_to_highlight:
+            if point["data"] == name_to_highlight:
                 self.selected_points.append(point)
                 break  # Assuming names are unique
         self._update_selection_highlighting()
         # Also, we might want to move the view to center on the point
         if self.selected_points:
-            pos = self.selected_points[0]['pos']
+            pos = self.selected_points[0]["pos"]
             self.plot_widget.getViewBox().setXRange(pos[0] - 1, pos[0] + 1, padding=0.1)
             self.plot_widget.getViewBox().setYRange(pos[1] - 1, pos[1] + 1, padding=0.1)
-
 
     def clear_highlight(self):
         """
@@ -112,7 +115,6 @@ class ScatterPlotView(QWidget):
         controls_layout.addWidget(QLabel("Size:"))
         controls_layout.addWidget(self.size_selector)
 
-
         # --- Plot ---
         self.plot_widget = CustomPlotWidget(self)
         self.scatter_plot = pg.ScatterPlotItem(
@@ -139,7 +141,7 @@ class ScatterPlotView(QWidget):
 
         self.selected_points = []
         for point in self.all_points_data:
-            point_pos = point['pos']
+            point_pos = point["pos"]
             if roi_rect.contains(*point_pos):
                 self.selected_points.append(point)
 
@@ -149,24 +151,23 @@ class ScatterPlotView(QWidget):
         """
         Updates the visual appearance of points based on selection.
         """
-        selected_names = [p['data'] for p in self.selected_points]
+        selected_names = [p["data"] for p in self.selected_points]
 
         # Create a temporary copy to modify, to avoid issues withsetData
         temp_points_data = [p.copy() for p in self.all_points_data]
 
         for p in temp_points_data:
-            if p['data'] in selected_names:
-                p['pen'] = pg.mkPen('w', width=2)
-                p['size'] = 15 # Make highlighted points larger
+            if p["data"] in selected_names:
+                p["pen"] = pg.mkPen("w", width=2)
+                p["size"] = 15  # Make highlighted points larger
             else:
                 # Reset to original style from update_plot_styles
                 # This part is tricky because the original style is dynamic.
                 # We need to re-apply the styling logic.
                 # For simplicity now, we just reset to a default.
                 # A better implementation would store the original style.
-                p['pen'] = None
-                p['size'] = 10
-
+                p["pen"] = None
+                p["size"] = 10
 
         self.scatter_plot.setData(spots=temp_points_data)
 
@@ -175,7 +176,7 @@ class ScatterPlotView(QWidget):
         self._update_selection_highlighting()
 
     def _emit_filter_signal(self):
-        names = [p['data'] for p in self.selected_points]
+        names = [p["data"] for p in self.selected_points]
         if names:
             self.experiments_selected_for_filtering.emit(names)
 
@@ -189,7 +190,7 @@ class ScatterPlotView(QWidget):
         Retrieves a metric value from experiment data, handling nested keys.
         """
         if metric_key == "default":
-            return 1.0 # Return a constant value
+            return 1.0  # Return a constant value
 
         # A helper to access nested dictionary keys
         def get_nested(_dict, keys):
@@ -209,7 +210,7 @@ class ScatterPlotView(QWidget):
 
             # Handle nested config keys
             elif metric_key.startswith("config."):
-                keys = metric_key.replace("config.", "").split('.')
+                keys = metric_key.replace("config.", "").split(".")
                 config, _ = self.manager.load_experiment_config(exp_data["name"])
                 if config:
                     val = get_nested(config, keys)
@@ -256,16 +257,17 @@ class ScatterPlotView(QWidget):
         # --- Store data for plotting ---
         self.all_points_data = []
         for i, exp in enumerate(valid_experiments):
-            self.all_points_data.append({
-                "pos": (principal_components[i, 0], principal_components[i, 1]),
-                "data": exp["name"],
-                "exp_data": exp, # Store original data
-            })
+            self.all_points_data.append(
+                {
+                    "pos": (principal_components[i, 0], principal_components[i, 1]),
+                    "data": exp["name"],
+                    "exp_data": exp,  # Store original data
+                }
+            )
 
         self.plot_widget.setLabel("bottom", "Principal Component 1")
         self.plot_widget.setLabel("left", "Principal Component 2")
         self.update_plot_styles()
-
 
     def update_plot_styles(self):
         """
@@ -277,8 +279,14 @@ class ScatterPlotView(QWidget):
         color_metric = self.color_selector.currentText()
         size_metric = self.size_selector.currentText()
 
-        color_values = [self._get_metric_value(color_metric, p["exp_data"]) for p in self.all_points_data]
-        size_values = [self._get_metric_value(size_metric, p["exp_data"]) for p in self.all_points_data]
+        color_values = [
+            self._get_metric_value(color_metric, p["exp_data"])
+            for p in self.all_points_data
+        ]
+        size_values = [
+            self._get_metric_value(size_metric, p["exp_data"])
+            for p in self.all_points_data
+        ]
 
         # Filter out None values for robust min/max calculation
         valid_colors = [v for v in color_values if v is not None]
@@ -287,9 +295,15 @@ class ScatterPlotView(QWidget):
         # --- Assign brushes based on color metric ---
         if valid_colors and color_metric != "default":
             min_c, max_c = min(valid_colors), max(valid_colors)
-            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 255, 0, 255)])
+            cmap = pg.ColorMap(
+                pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 255, 0, 255)]
+            )
             for i, p in enumerate(self.all_points_data):
-                p["brush"] = cmap.map(color_values[i], 'qcolor') if color_values[i] is not None else pg.mkBrush("gray")
+                p["brush"] = (
+                    cmap.map(color_values[i], "qcolor")
+                    if color_values[i] is not None
+                    else pg.mkBrush("gray")
+                )
         else:
             for p in self.all_points_data:
                 p["brush"] = pg.mkBrush("blue")
@@ -297,7 +311,8 @@ class ScatterPlotView(QWidget):
         # --- Assign sizes based on size metric ---
         if valid_sizes and size_metric != "default":
             min_s, max_s = min(valid_sizes), max(valid_sizes)
-            if max_s == min_s: max_s += 1e-9 # Avoid division by zero
+            if max_s == min_s:
+                max_s += 1e-9  # Avoid division by zero
             for i, p in enumerate(self.all_points_data):
                 if size_values[i] is not None:
                     # Normalize size between 5 and 20
@@ -311,14 +326,20 @@ class ScatterPlotView(QWidget):
         self._update_selection_highlighting()
 
         # --- Clear old legends and lines ---
-        items_to_remove = [item for item in self.plot_widget.items() if isinstance(item, (QGraphicsLineItem, pg.GradientLegend))]
+        items_to_remove = [
+            item
+            for item in self.plot_widget.items()
+            if isinstance(item, (QGraphicsLineItem, pg.GradientLegend))
+        ]
         for item in items_to_remove:
             self.plot_widget.removeItem(item)
 
         # --- Add new color bar ---
         if valid_colors and color_metric != "default":
             min_c, max_c = min(valid_colors), max(valid_colors)
-            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 255, 0, 255)])
+            cmap = pg.ColorMap(
+                pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 255, 0, 255)]
+            )
             grad_legend = pg.GradientLegend((20, 150), (-10, -30))
             grad_legend.setLabels({f"{min_c:.2g}": 0, f"{max_c:.2g}": 1})
             grad_legend.setColorMap(cmap)
@@ -328,7 +349,11 @@ class ScatterPlotView(QWidget):
         races = {}
         for i, p in enumerate(self.all_points_data):
             exp_data = p["exp_data"]
-            if exp_data and exp_data.get("race_id") and exp_data.get("race_id") != "N/A":
+            if (
+                exp_data
+                and exp_data.get("race_id")
+                and exp_data.get("race_id") != "N/A"
+            ):
                 race_id = exp_data["race_id"]
                 if race_id not in races:
                     races[race_id] = []
@@ -336,16 +361,20 @@ class ScatterPlotView(QWidget):
 
         for race_id, members in races.items():
             if len(members) > 1:
-                challenger = next((m for m in members if not m["data"].get("is_baseline_for")), None)
-                if not challenger: continue
+                challenger = next(
+                    (m for m in members if not m["data"].get("is_baseline_for")), None
+                )
+                if not challenger:
+                    continue
 
                 for baseline in members:
-                    if baseline == challenger: continue
+                    if baseline == challenger:
+                        continue
                     line = QGraphicsLineItem(
                         challenger["point"]["pos"][0],
                         challenger["point"]["pos"][1],
                         baseline["point"]["pos"][0],
                         baseline["point"]["pos"][1],
                     )
-                    line.setPen(pg.mkPen('grey', width=1, style=Qt.PenStyle.DashLine))
+                    line.setPen(pg.mkPen("grey", width=1, style=Qt.PenStyle.DashLine))
                     self.plot_widget.addItem(line)

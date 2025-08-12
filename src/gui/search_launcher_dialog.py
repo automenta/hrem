@@ -1,6 +1,7 @@
 import json
 import os
 from PyQt6.QtWidgets import (
+    QWidget,
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -112,7 +113,9 @@ class SearchLauncherDialog(QDialog):
                 with open(path, "r") as f:
                     self.base_config = json.load(f)
                 self.config_model.clear()
-                self._populate_tree(self.base_config, self.config_model.invisibleRootItem())
+                self._populate_tree(
+                    self.base_config, self.config_model.invisibleRootItem()
+                )
                 self.search_name_input.setText(f"search_{os.path.basename(path)}")
             except Exception as e:
                 QMessageBox.warning(self, "Load Error", f"Failed to load config: {e}")
@@ -172,7 +175,7 @@ class SearchLauncherDialog(QDialog):
         # Distribution cell
         dist_widget = QWidget()
         dist_layout = QHBoxLayout(dist_widget)
-        dist_layout.setContentsMargins(2,2,2,2)
+        dist_layout.setContentsMargins(2, 2, 2, 2)
 
         if param_type == "float":
             dist_layout.addWidget(QLabel("Min:"))
@@ -188,27 +191,28 @@ class SearchLauncherDialog(QDialog):
             dist_layout.addWidget(QLineEdit())
         elif param_type == "categorical":
             dist_layout.addWidget(QLabel("Choices:"))
-            dist_layout.addWidget(QLineEdit()) # Comma-separated
+            dist_layout.addWidget(QLineEdit())  # Comma-separated
 
         self.search_params_table.setCellWidget(row, 2, dist_widget)
 
         # Options cell (for remove button)
         opts_widget = QWidget()
         opts_layout = QHBoxLayout(opts_widget)
-        opts_layout.setContentsMargins(0,0,0,0)
+        opts_layout.setContentsMargins(0, 0, 0, 0)
         remove_button = QPushButton("Remove")
         remove_button.clicked.connect(lambda: self.search_params_table.removeRow(row))
         opts_layout.addWidget(remove_button)
         opts_layout.addStretch()
         self.search_params_table.setCellWidget(row, 3, opts_widget)
 
-
     def _on_accept(self):
         # This is where we will construct the final config and launch
         # For now, just a placeholder
         search_name = self.search_name_input.text().strip()
         if not search_name:
-            QMessageBox.warning(self, "Validation Error", "Search name cannot be empty.")
+            QMessageBox.warning(
+                self, "Validation Error", "Search name cannot be empty."
+            )
             return
 
         final_config = self.base_config.copy()
@@ -228,7 +232,8 @@ class SearchLauncherDialog(QDialog):
                 max_val = float(layout.itemAt(3).widget().text())
                 is_log = layout.itemAt(4).widget().isChecked()
                 param_info["args"] = [min_val, max_val]
-                if is_log: param_info["kwargs"]["log"] = True
+                if is_log:
+                    param_info["kwargs"]["log"] = True
             elif param_type == "int":
                 low_val = int(layout.itemAt(1).widget().text())
                 high_val = int(layout.itemAt(3).widget().text())
@@ -236,20 +241,22 @@ class SearchLauncherDialog(QDialog):
             elif param_type == "categorical":
                 choices_str = layout.itemAt(1).widget().text()
                 # need to handle types correctly, e.g., "true" -> True
-                param_info["args"] = [c.strip() for c in choices_str.split(',')]
+                param_info["args"] = [c.strip() for c in choices_str.split(",")]
 
             search_params[path] = param_info
 
         final_config["search"] = {
-            "direction": "minimize", # placeholder
-            "metric": "test_loss", # placeholder
+            "direction": "minimize",  # placeholder
+            "metric": "test_loss",  # placeholder
             "n_trials": int(self.trials_input.text()),
-            "params": search_params
+            "params": search_params,
         }
         final_config["experiment_name"] = search_name
 
         # Launching logic
-        success, msg = self.manager.launch_experiment_from_config(final_config, search_name)
+        success, msg = self.manager.launch_experiment_from_config(
+            final_config, search_name
+        )
         if success:
             self.accept()
         else:

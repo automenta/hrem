@@ -26,8 +26,16 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QAbstractItemView,
     QMenu,
+    QGroupBox,
 )
-from PyQt6.QtCore import Qt, QTimer, QItemSelectionModel, QSettings, QUrl, QDesktopServices
+from PyQt6.QtCore import (
+    Qt,
+    QTimer,
+    QItemSelectionModel,
+    QSettings,
+    QUrl,
+    QDesktopServices,
+)
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
 
 from .experiment_manager import ExperimentManager
@@ -49,6 +57,7 @@ from .constants import (
 )
 
 FILTER_CACHE_FILE = ".filter_cache.txt"
+
 
 class MainGUI(QMainWindow):
     """
@@ -83,14 +92,14 @@ class MainGUI(QMainWindow):
                     filter_text = f.read()
                     self.filter_input.setText(filter_text)
             except IOError:
-                pass # Ignore errors reading cache
+                pass  # Ignore errors reading cache
 
     def _save_filter_cache(self):
         try:
             with open(FILTER_CACHE_FILE, "w") as f:
                 f.write(self.filter_input.text())
         except IOError:
-            pass # Ignore errors writing cache
+            pass  # Ignore errors writing cache
 
     def closeEvent(self, event):
         self._save_filter_cache()
@@ -102,7 +111,9 @@ class MainGUI(QMainWindow):
     def _save_settings(self):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("main_splitter_state", self.main_splitter.saveState())
-        self.settings.setValue("right_splitter_state", self.right_panel_splitter.saveState())
+        self.settings.setValue(
+            "right_splitter_state", self.right_panel_splitter.saveState()
+        )
 
     def _load_settings(self):
         geometry = self.settings.value("geometry")
@@ -442,19 +453,28 @@ class MainGUI(QMainWindow):
 
         suggested_name = f"{original_name}_edit"
         new_name, ok = QInputDialog.getText(
-            self, "Edit & Re-launch Experiment", f"Enter new name for this version of '{original_name}':",
-            QLineEdit.EchoMode.Normal, suggested_name
+            self,
+            "Edit & Re-launch Experiment",
+            f"Enter new name for this version of '{original_name}':",
+            QLineEdit.EchoMode.Normal,
+            suggested_name,
         )
         if not (ok and new_name):
             return
 
         if new_name == original_name:
-            QMessageBox.warning(self, "Validation Error", "The new experiment name must be different from the original.")
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                "The new experiment name must be different from the original.",
+            )
             return
 
         original_config["parent_experiment"] = original_name
 
-        dialog = UnifiedLaunchDialog(config=original_config, exp_name=new_name, parent=self)
+        dialog = UnifiedLaunchDialog(
+            config=original_config, exp_name=new_name, parent=self
+        )
         if dialog.exec():
             self._launch_from_info(dialog.get_launch_info())
 
@@ -470,8 +490,13 @@ class MainGUI(QMainWindow):
         items = {}
         for name, data in graph["nodes"].items():
             row = [
-                data["name"], data.get("type", "Single"), data["status"],
-                data["model"], data["dataset"], data["final_loss"], data["created"],
+                data["name"],
+                data.get("type", "Single"),
+                data["status"],
+                data["model"],
+                data["dataset"],
+                data["final_loss"],
+                data["created"],
             ]
             qt_items = [QStandardItem(str(field)) for field in row]
             qt_items[0].setData(data, role=Qt.ItemDataRole.UserRole)
@@ -493,7 +518,7 @@ class MainGUI(QMainWindow):
         text_lower = text.lower()
         name_filters, kv_filters = [], {}
         if text_lower.startswith("name:"):
-            kv_filters['name'] = text_lower[5:].split(',')
+            kv_filters["name"] = text_lower[5:].split(",")
         else:
             for part in text_lower.split():
                 if ":" in part:
@@ -501,32 +526,43 @@ class MainGUI(QMainWindow):
                     kv_filters[key] = value
                 else:
                     name_filters.append(part)
+
         def item_matches(item):
-            if not item: return False
+            if not item:
+                return False
             data = item.data(role=Qt.ItemDataRole.UserRole)
-            if not data: return False
+            if not data:
+                return False
             item_name_lower = data.get("name", "").lower()
-            if any(f not in item_name_lower for f in name_filters): return False
+            if any(f not in item_name_lower for f in name_filters):
+                return False
             for key, value in kv_filters.items():
-                if key == 'name' and isinstance(value, list):
-                    if item_name_lower not in value: return False
-                elif value not in str(data.get(key, "")).lower(): return False
+                if key == "name" and isinstance(value, list):
+                    if item_name_lower not in value:
+                        return False
+                elif value not in str(data.get(key, "")).lower():
+                    return False
             return True
+
         def recurse(parent_item):
             any_child_is_visible = False
             for r in range(parent_item.rowCount()):
                 child_item = parent_item.child(r, 0)
                 is_visible = recurse(child_item) or item_matches(child_item)
                 self.exp_tree.setRowHidden(r, parent_item.index(), not is_visible)
-                if is_visible: any_child_is_visible = True
+                if is_visible:
+                    any_child_is_visible = True
             return any_child_is_visible
+
         if hasattr(self, "exp_model"):
             recurse(self.exp_model.invisibleRootItem())
 
     def get_selected_experiment_names(self):
-        if not hasattr(self, "exp_tree"): return []
+        if not hasattr(self, "exp_tree"):
+            return []
         selection_model = self.exp_tree.selectionModel()
-        if not selection_model: return []
+        if not selection_model:
+            return []
         selected_names = []
         for index in selection_model.selectedRows(column=0):
             item = self.exp_model.itemFromIndex(index)
@@ -541,33 +577,46 @@ class MainGUI(QMainWindow):
         return names[0] if names else None
 
     def select_experiment_by_name(self, name_to_select: str):
-        if not name_to_select or not hasattr(self, "exp_model"): return
+        if not name_to_select or not hasattr(self, "exp_model"):
+            return
+
         def find_item_recursively(parent_item):
             for r in range(parent_item.rowCount()):
                 item = parent_item.child(r, 0)
-                if item and item.data(role=Qt.ItemDataRole.UserRole)["name"] == name_to_select:
+                if (
+                    item
+                    and item.data(role=Qt.ItemDataRole.UserRole)["name"]
+                    == name_to_select
+                ):
                     return item
                 found_item = find_item_recursively(item)
-                if found_item: return found_item
+                if found_item:
+                    return found_item
             return None
+
         item_to_select = find_item_recursively(self.exp_model.invisibleRootItem())
         if item_to_select:
             self.exp_tree.selectionModel().select(
                 item_to_select.index(),
-                QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
+                QItemSelectionModel.SelectionFlag.ClearAndSelect
+                | QItemSelectionModel.SelectionFlag.Rows,
             )
             self.exp_tree.scrollTo(item_to_select.index())
 
     def archive_selected_experiments(self):
         exp_names = self.get_selected_experiment_names()
-        if not exp_names: return
+        if not exp_names:
+            return
         reply = QMessageBox.question(
-            self, f"Archive {len(exp_names)} Experiments",
+            self,
+            f"Archive {len(exp_names)} Experiments",
             f"Are you sure you want to archive {len(exp_names)} experiments?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            for name in exp_names: self.manager.archive_experiment(name)
+            for name in exp_names:
+                self.manager.archive_experiment(name)
             self.refresh_ui()
 
     def open_archive_manager(self):
@@ -577,9 +626,16 @@ class MainGUI(QMainWindow):
 
     def rename_selected_experiment(self):
         exp_names = self.get_selected_experiment_names()
-        if len(exp_names) != 1: return
+        if len(exp_names) != 1:
+            return
         exp_name = exp_names[0]
-        new_name, ok = QInputDialog.getText(self, "Rename Experiment", f"Enter new name for '{exp_name}':", QLineEdit.EchoMode.Normal, exp_name)
+        new_name, ok = QInputDialog.getText(
+            self,
+            "Rename Experiment",
+            f"Enter new name for '{exp_name}':",
+            QLineEdit.EchoMode.Normal,
+            exp_name,
+        )
         if ok and new_name:
             success, message = self.manager.rename_experiment(exp_name, new_name)
             if success:
@@ -590,11 +646,14 @@ class MainGUI(QMainWindow):
 
     def select_parent_experiment(self):
         exp_name = self.get_selected_experiment_name()
-        if not exp_name: return
+        if not exp_name:
+            return
         config, err = self.manager.load_experiment_config(exp_name)
-        if err: return
+        if err:
+            return
         parent_name = config.get("parent_experiment")
-        if parent_name: self.select_experiment_by_name(parent_name)
+        if parent_name:
+            self.select_experiment_by_name(parent_name)
 
     def clear_comparison(self):
         self.comparison_list.clear()
@@ -618,7 +677,8 @@ class MainGUI(QMainWindow):
         self.update_selected_experiment_display()
         self.trajectory_view.draw_graph()
         self.scatter_plot_view.update_plot()
-        if hasattr(self, "challenge_view"): self.challenge_view.refresh()
+        if hasattr(self, "challenge_view"):
+            self.challenge_view.refresh()
 
     def update_selected_experiment_display(self):
         self.plot_widget.clear()
@@ -661,7 +721,9 @@ class MainGUI(QMainWindow):
         self.plot_widget.setTitle(f"Search Summary: {exp_name}")
         graph = self.manager.get_experiment_graph()
         children_names = [edge[1] for edge in graph["edges"] if edge[0] == exp_name]
-        trials = [graph["nodes"][name] for name in children_names if name in graph["nodes"]]
+        trials = [
+            graph["nodes"][name] for name in children_names if name in graph["nodes"]
+        ]
         if not trials:
             self.config_display.setText("No trials found for this search yet.")
             self.diff_table.setVisible(False)
@@ -670,13 +732,19 @@ class MainGUI(QMainWindow):
         for trial in trials:
             try:
                 loss = float(trial["final_loss"])
-                if loss < best_loss: best_loss, best_trial = loss, trial
-            except (ValueError, TypeError): continue
+                if loss < best_loss:
+                    best_loss, best_trial = loss, trial
+            except (ValueError, TypeError):
+                continue
         if best_trial:
-            best_trial_config, _ = self.manager.load_experiment_config(best_trial["name"])
-            summary_text = (f"<b>Best Trial:</b> {best_trial['name']}<br>"
-                            f"<b>Best Test Loss:</b> {best_trial['final_loss']}<br><br>"
-                            f"<b>Best Parameters:</b><br>")
+            best_trial_config, _ = self.manager.load_experiment_config(
+                best_trial["name"]
+            )
+            summary_text = (
+                f"<b>Best Trial:</b> {best_trial['name']}<br>"
+                f"<b>Best Test Loss:</b> {best_trial['final_loss']}<br><br>"
+                f"<b>Best Parameters:</b><br>"
+            )
             search_config, _ = self.manager.load_experiment_config(exp_name)
             tuned_params = search_config.get("search", {}).get("params", {}).keys()
             flat_config = self._flatten_dict(best_trial_config)
@@ -684,12 +752,18 @@ class MainGUI(QMainWindow):
                 summary_text += f"- {p}: {flat_config.get(p, 'N/A')}<br>"
             self.config_display.setHtml(summary_text)
         else:
-            self.config_display.setText("No completed trials with valid loss values yet.")
+            self.config_display.setText(
+                "No completed trials with valid loss values yet."
+            )
 
         search_config, _ = self.manager.load_experiment_config(exp_name)
         if search_config:
-            self.notes_display.setText(search_config.get("notes", "No notes for this search."))
-            tuned_params = list(search_config.get("search", {}).get("params", {}).keys())
+            self.notes_display.setText(
+                search_config.get("notes", "No notes for this search.")
+            )
+            tuned_params = list(
+                search_config.get("search", {}).get("params", {}).keys()
+            )
         else:
             tuned_params = []
 
@@ -721,12 +795,23 @@ class MainGUI(QMainWindow):
             QMessageBox.warning(self, "Result file error", res_error)
         elif results_data:
             metric_base_name = self.metric_selector.currentText() or "loss"
-            train_metric, test_metric = f"train_{metric_base_name}", f"test_{metric_base_name}"
+            train_metric, test_metric = (
+                f"train_{metric_base_name}",
+                f"test_{metric_base_name}",
+            )
             self.current_train_loss = results_data.get(train_metric, [])
             self.current_test_loss = results_data.get(test_metric, [])
-            self.plot_widget.setTitle(f"Learning Curves: {exp_name} ({metric_base_name})")
-            if self.current_train_loss: self.plot_widget.plot(self.current_train_loss, pen="b", name=f"Train {metric_base_name}")
-            if self.current_test_loss: self.plot_widget.plot(self.current_test_loss, pen="r", name=f"Test {metric_base_name}")
+            self.plot_widget.setTitle(
+                f"Learning Curves: {exp_name} ({metric_base_name})"
+            )
+            if self.current_train_loss:
+                self.plot_widget.plot(
+                    self.current_train_loss, pen="b", name=f"Train {metric_base_name}"
+                )
+            if self.current_test_loss:
+                self.plot_widget.plot(
+                    self.current_test_loss, pen="r", name=f"Test {metric_base_name}"
+                )
             self.plot_widget.addLegend()
         else:
             self.plot_widget.setTitle(f"No results available for: {exp_name}")
@@ -735,7 +820,9 @@ class MainGUI(QMainWindow):
             self.config_display.setText(conf_error)
         elif config_data:
             self.config_display.setText(json.dumps(config_data, indent=4))
-            self.notes_display.setText(config_data.get("notes", "No notes for this experiment."))
+            self.notes_display.setText(
+                config_data.get("notes", "No notes for this experiment.")
+            )
 
     def _display_comparison(self):
         self.config_display.setVisible(False)
@@ -748,32 +835,54 @@ class MainGUI(QMainWindow):
         self.plot_widget.setTitle(f"Comparing {len(self.comparison_list)} experiments")
         colors = ["b", "r", "g", "c", "m", "y", "w"]
         metric_base_name = self.metric_selector.currentText()
-        if not metric_base_name: return
-        train_metric, test_metric = f"train_{metric_base_name}", f"test_{metric_base_name}"
+        if not metric_base_name:
+            return
+        train_metric, test_metric = (
+            f"train_{metric_base_name}",
+            f"test_{metric_base_name}",
+        )
         for i, exp_name in enumerate(self.comparison_list):
             results_data, _ = self.manager.load_experiment_results(exp_name)
             if results_data:
-                train_vals, test_vals = results_data.get(train_metric, []), results_data.get(test_metric, [])
+                train_vals, test_vals = results_data.get(
+                    train_metric, []
+                ), results_data.get(test_metric, [])
                 color = colors[i % len(colors)]
-                if train_vals: self.plot_widget.plot(train_vals, pen=pg.mkPen(color, style=Qt.PenStyle.SolidLine), name=f"{exp_name} Train")
-                if test_vals: self.plot_widget.plot(test_vals, pen=pg.mkPen(color, style=Qt.PenStyle.DashLine), name=f"{exp_name} Test")
+                if train_vals:
+                    self.plot_widget.plot(
+                        train_vals,
+                        pen=pg.mkPen(color, style=Qt.PenStyle.SolidLine),
+                        name=f"{exp_name} Train",
+                    )
+                if test_vals:
+                    self.plot_widget.plot(
+                        test_vals,
+                        pen=pg.mkPen(color, style=Qt.PenStyle.DashLine),
+                        name=f"{exp_name} Test",
+                    )
 
     def _flatten_dict(self, d, parent_key="", sep="."):
         items = []
         for k, v in d.items():
             new_key = parent_key + sep + k if parent_key else k
-            if isinstance(v, dict): items.extend(self._flatten_dict(v, new_key, sep=sep).items())
-            else: items.append((new_key, v))
+            if isinstance(v, dict):
+                items.extend(self._flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
         return dict(items)
 
     def _update_diff_table(self, exp_names):
         self.diff_table.setRowCount(0)
-        if len(exp_names) < 2: self.diff_table.setVisible(False); return
+        if len(exp_names) < 2:
+            self.diff_table.setVisible(False)
+            return
         configs = []
         for name in exp_names:
             config_data, _ = self.manager.load_experiment_config(name)
-            if config_data: configs.append(self._flatten_dict(config_data))
-        if len(configs) < 2: return
+            if config_data:
+                configs.append(self._flatten_dict(config_data))
+        if len(configs) < 2:
+            return
         all_keys = set().union(*(c.keys() for c in configs))
         diff_keys = {k for k in all_keys if len({c.get(k) for c in configs}) > 1}
         self.diff_table.setColumnCount(len(exp_names) + 1)
@@ -783,22 +892,41 @@ class MainGUI(QMainWindow):
         for row, key in enumerate(sorted_diff_keys):
             self.diff_table.setItem(row, 0, QTableWidgetItem(key))
             for col, config in enumerate(configs):
-                self.diff_table.setItem(row, col + 1, QTableWidgetItem(str(config.get(key, "N/A"))))
+                self.diff_table.setItem(
+                    row, col + 1, QTableWidgetItem(str(config.get(key, "N/A")))
+                )
         self.diff_table.resizeColumnsToContents()
 
     def _update_metric_selector(self, exp_names):
         self.metric_selector.blockSignals(True)
         self.metric_selector.clear()
-        if not exp_names: self.metric_selector.blockSignals(False); return
+        if not exp_names:
+            self.metric_selector.blockSignals(False)
+            return
         common_metrics = None
         for name in exp_names:
             results, _ = self.manager.load_experiment_results(name)
             if results:
-                metrics = {k.replace("train_", "").replace("test_", "") for k, v in results.items() if isinstance(v, list)}
-                if common_metrics is None: common_metrics = metrics
-                else: common_metrics.intersection_update(metrics)
+                metrics = {
+                    k.replace("train_", "").replace("test_", "")
+                    for k, v in results.items()
+                    if isinstance(v, list)
+                }
+                if common_metrics is None:
+                    common_metrics = metrics
+                else:
+                    common_metrics.intersection_update(metrics)
         if common_metrics:
-            valid_metrics = [m for m in common_metrics if any(f"train_{m}" in r or f"test_{m}" in r for r, _ in (self.manager.load_experiment_results(n) for n in exp_names))]
+            valid_metrics = [
+                m
+                for m in common_metrics
+                if any(
+                    f"train_{m}" in r or f"test_{m}" in r
+                    for r, _ in (
+                        self.manager.load_experiment_results(n) for n in exp_names
+                    )
+                )
+            ]
             self.metric_selector.addItems(sorted(list(set(valid_metrics))))
         self.metric_selector.blockSignals(False)
 
@@ -809,30 +937,47 @@ class MainGUI(QMainWindow):
             x, y = mouse_point.x(), mouse_point.y()
             if 0 <= x < len(self.current_train_loss):
                 index = int(round(x))
-                if 0 <= index < len(self.current_train_loss) and 0 <= index < len(self.current_test_loss):
-                    train_val, test_val = self.current_train_loss[index], self.current_test_loss[index]
-                    self.plot_label.setText(f"Epoch: {index}\nTrain: {train_val:.4f}\nTest: {test_val:.4f}")
+                if 0 <= index < len(self.current_train_loss) and 0 <= index < len(
+                    self.current_test_loss
+                ):
+                    train_val, test_val = (
+                        self.current_train_loss[index],
+                        self.current_test_loss[index],
+                    )
+                    self.plot_label.setText(
+                        f"Epoch: {index}\nTrain: {train_val:.4f}\nTest: {test_val:.4f}"
+                    )
                     self.plot_label.setPos(x, y)
-                    self.v_line.setPos(x); self.h_line.setPos(y)
-                    self.v_line.show(); self.h_line.show(); self.plot_label.show()
+                    self.v_line.setPos(x)
+                    self.h_line.setPos(y)
+                    self.v_line.show()
+                    self.h_line.show()
+                    self.plot_label.show()
                     return
-        self.v_line.hide(); self.h_line.hide(); self.plot_label.hide()
+        self.v_line.hide()
+        self.h_line.hide()
+        self.plot_label.hide()
 
     def stop_selected_experiments(self):
         exp_names = self.get_selected_experiment_names()
-        if not exp_names: return
-        for name in exp_names: self.manager.stop_experiment(name, force=False)
+        if not exp_names:
+            return
+        for name in exp_names:
+            self.manager.stop_experiment(name, force=False)
         QTimer.singleShot(500, self.refresh_ui)
 
     def force_stop_selected_experiments(self):
         exp_names = self.get_selected_experiment_names()
-        if not exp_names: return
-        for name in exp_names: self.manager.stop_experiment(name, force=True)
+        if not exp_names:
+            return
+        for name in exp_names:
+            self.manager.stop_experiment(name, force=True)
         QTimer.singleShot(500, self.refresh_ui)
 
     def view_selected_logs(self):
         exp_name = self.get_selected_experiment_name()
-        if not exp_name: return
+        if not exp_name:
+            return
         log_content = self.manager.get_log_contents(exp_name)
         self.log_deck.add_log_view(exp_name, log_content)
         self.log_deck.show()
@@ -846,4 +991,6 @@ class MainGUI(QMainWindow):
             url = QUrl.fromLocalFile(log_path)
             QDesktopServices.openUrl(url)
         else:
-            QMessageBox.warning(self, "File Not Found", f"Log file for {exp_name} not found.")
+            QMessageBox.warning(
+                self, "File Not Found", f"Log file for {exp_name} not found."
+            )

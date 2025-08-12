@@ -72,7 +72,9 @@ class UnifiedLaunchDialog(QDialog):
         type_layout = QHBoxLayout()
         type_layout.addWidget(QLabel("Run Type:"))
         self.run_type_selector = QComboBox()
-        self.run_type_selector.addItems(["Single Run", "Challenge", "Hyperparameter Search"])
+        self.run_type_selector.addItems(
+            ["Single Run", "Challenge", "Hyperparameter Search"]
+        )
         self.run_type_selector.currentTextChanged.connect(self._on_run_type_changed)
         type_layout.addWidget(self.run_type_selector)
         type_layout.addStretch()
@@ -137,7 +139,6 @@ class UnifiedLaunchDialog(QDialog):
         layout.addWidget(self.search_config_editor)
 
         self.main_panel.addWidget(self.search_panel)
-
 
     def _update_json_preview(self):
         run_type = self.run_type_selector.currentText()
@@ -208,13 +209,17 @@ class UnifiedLaunchDialog(QDialog):
             self.launch_button.setText("Launch Search")
 
     def _select_challenger(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Challenger Config", CONFIGS_DIR, "JSON files (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Challenger Config", CONFIGS_DIR, "JSON files (*.json)"
+        )
         if path:
             self.challenger_config_path = path
             self.challenger_label.setText(os.path.basename(path))
 
     def _add_baseline(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select Baseline Model", BASE_MODELS_DIR, "JSON files (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Baseline Model", BASE_MODELS_DIR, "JSON files (*.json)"
+        )
         if path:
             model_name = os.path.splitext(os.path.basename(path))[0]
             if not self.baseline_list.findItems(model_name, Qt.MatchFlag.MatchExactly):
@@ -236,13 +241,24 @@ class UnifiedLaunchDialog(QDialog):
 
         if run_type == "Challenge":
             if not self.challenger_config_path:
-                QMessageBox.warning(self, "Validation Error", "You must select a challenger model config.")
+                QMessageBox.warning(
+                    self,
+                    "Validation Error",
+                    "You must select a challenger model config.",
+                )
                 return
             if self.baseline_list.count() == 0:
-                QMessageBox.warning(self, "Validation Error", "You must select at least one baseline model.")
+                QMessageBox.warning(
+                    self,
+                    "Validation Error",
+                    "You must select at least one baseline model.",
+                )
                 return
 
-            baselines = [self.baseline_list.item(i).text() for i in range(self.baseline_list.count())]
+            baselines = [
+                self.baseline_list.item(i).text()
+                for i in range(self.baseline_list.count())
+            ]
             self.launch_info = {
                 "type": "Challenge",
                 "base_name": name,

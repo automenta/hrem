@@ -1,14 +1,25 @@
 import json
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QGroupBox, QFormLayout, QLineEdit, QComboBox,
-    QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QHeaderView
+    QWidget,
+    QVBoxLayout,
+    QGroupBox,
+    QFormLayout,
+    QLineEdit,
+    QComboBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QPushButton,
+    QHBoxLayout,
+    QHeaderView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
+
 
 class SearchConfigEditor(QWidget):
     """
     A widget for editing the 'search' section of a hyperparameter search config.
     """
+
     config_changed = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -41,9 +52,13 @@ class SearchConfigEditor(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Parameter Path", "Type", "Distribution (JSON)"])
+        self.table.setHorizontalHeaderLabels(
+            ["Parameter Path", "Type", "Distribution (JSON)"]
+        )
         self.table.itemChanged.connect(self.config_changed)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
         search_space_layout.addWidget(self.table)
 
         button_layout = QHBoxLayout()
@@ -130,9 +145,9 @@ class SearchConfigEditor(QWidget):
                 # If JSON fails, for categorical it might just be a list of strings
                 # This is a simplification. A real implementation might need more robust parsing.
                 if param_type == "categorical":
-                    distribution = [s.strip() for s in dist_str.strip('[]').split(',')]
+                    distribution = [s.strip() for s in dist_str.strip("[]").split(",")]
                 else:
-                    continue # Skip malformed rows
+                    continue  # Skip malformed rows
 
             params[path] = {
                 "type": param_type,
@@ -142,5 +157,5 @@ class SearchConfigEditor(QWidget):
         return {
             "n_trials": int(self.n_trials_input.text()),
             "sampler": self.sampler_combo.currentText(),
-            "params": params
+            "params": params,
         }
