@@ -156,15 +156,9 @@ class MainGUI(QMainWindow):
         # --- Buttons ---
         self.refresh_button = QPushButton("Refresh List")
         self.refresh_button.clicked.connect(self.refresh_ui)
-        self.launch_button = QPushButton("Launch from Config")
-        self.launch_button.setToolTip("Launch a single experiment from a JSON config file.")
-        self.launch_button.clicked.connect(self.launch_new_experiment)
-        self.launch_challenge_button = QPushButton("Launch Challenge...")
-        self.launch_challenge_button.setToolTip("Launch a race between a challenger and multiple baseline models.")
-        self.launch_challenge_button.clicked.connect(self.launch_new_challenge)
-        self.launch_search_button = QPushButton("Launch Search...")
-        self.launch_search_button.setToolTip("Interactively design and launch a hyperparameter search.")
-        self.launch_search_button.clicked.connect(self.launch_new_search)
+        self.launch_button = QPushButton("Launch...")
+        self.launch_button.setToolTip("Launch a new experiment, challenge, or search.")
+        self.launch_button.clicked.connect(self.launch_new_experiment) # This will be updated later
         self.archive_manager_button = QPushButton("Manage Archives...")
         self.archive_manager_button.clicked.connect(self.open_archive_manager)
         self.clone_button = QPushButton("Clone")
@@ -173,6 +167,10 @@ class MainGUI(QMainWindow):
         self.rename_button = QPushButton("Rename")
         self.rename_button.clicked.connect(self.rename_selected_experiment)
         self.rename_button.setEnabled(False)
+        self.select_parent_button = QPushButton("Select Parent")
+        self.select_parent_button.setToolTip("Select the parent of this experiment in the tree.")
+        self.select_parent_button.clicked.connect(self.select_parent_experiment)
+        self.select_parent_button.setEnabled(False)
         self.stop_button = QPushButton("Stop")
         self.stop_button.clicked.connect(self.stop_selected_experiments)
         self.stop_button.setEnabled(False)
@@ -229,10 +227,9 @@ class MainGUI(QMainWindow):
             [
                 self.refresh_button,
                 self.launch_button,
-                self.launch_challenge_button,
-                self.launch_search_button,
                 self.clone_button,
                 self.rename_button,
+                self.select_parent_button,
                 self.stop_button,
                 self.delete_button,
                 self.archive_manager_button,
@@ -285,28 +282,6 @@ class MainGUI(QMainWindow):
         )
         layout.addWidget(self.scatter_plot_view)
 
-    def launch_new_challenge(self):
-        """
-        Opens a dialog to launch a new baseline challenge.
-        """
-        dialog = ChallengeLauncherDialog(self.manager, self)
-        if dialog.exec():
-            launch_info = dialog.get_launch_info()
-            if launch_info:
-                success, message = self.manager.launch_experiment_race(launch_info)
-                if success:
-                    QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
-                else:
-                    QMessageBox.warning(self, "Launch Failed", message)
-
-    def launch_new_search(self):
-        """
-        Opens a dialog to launch a new hyperparameter search.
-        """
-        dialog = SearchLauncherDialog(self.manager, self)
-        if dialog.exec():
-            # The dialog now handles the launch, so we just need to refresh
-            QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
 
     def _create_challenges_tab(self):
         """
@@ -336,21 +311,38 @@ class MainGUI(QMainWindow):
 
     def launch_new_experiment(self):
         """
-        Opens a unified dialog to launch a new experiment.
+        Opens a unified dialog to launch a new experiment, challenge, or search.
         """
         # For a new experiment, we might start with a default or empty config
         default_config = {"model": {}, "dataset": {}, "training": {}}
         dialog = UnifiedLaunchDialog(config=default_config, parent=self)
+
         if dialog.exec():
             launch_info = dialog.get_launch_info()
-            if launch_info:
+            if not launch_info:
+                return
+
+            run_type = launch_info.get("type")
+            success = False
+            message = "An unknown error occurred."
+
+            if run_type == "Challenge":
+                # The manager method for races is expected to exist
+                if hasattr(self.manager, "launch_experiment_race"):
+                    success, message = self.manager.launch_experiment_race(launch_info)
+                else:
+                    message = "Functionality to launch challenges is not implemented in the manager."
+            elif run_type in ["Single Run", "Hyperparameter Search"]:
                 success, message = self.manager.launch_experiment_from_config(
                     launch_info["config"], launch_info["name"]
                 )
-                if success:
-                    QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
-                else:
-                    QMessageBox.warning(self, "Launch Failed", message)
+            else:
+                message = f"Unknown run type '{run_type}' specified by the launch dialog."
+
+            if success:
+                QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
+            else:
+                QMessageBox.warning(self, "Launch Failed", message)
 
     def clone_selected_experiment(self):
         """
@@ -441,26 +433,78 @@ class MainGUI(QMainWindow):
 
     def filter_experiments(self, text):
         """
-        Recursively filters the experiment tree by name.
+        Recursively filters the experiment tree by name, status, model, etc.
+        Supports queries like "my_exp model:mlp status:running" and the special
+        "name:exp1,exp2" syntax from the analysis tab.
         """
+        # 1. Parse the filter text
+        text_lower = text.lower()
+        name_filters = []
+        kv_filters = {}
+
+        # Handle the special case from the analysis tab first
+        if text_lower.startswith("name:"):
+            # This is a comma-separated list of exact names
+            keys = text_lower[5:].split(',')
+            kv_filters['name'] = keys
+        else:
+            # Standard space-separated filters
+            for part in text_lower.split():
+                if ":" in part:
+                    key, value = part.split(":", 1)
+                    kv_filters[key] = value
+                else:
+                    name_filters.append(part)
+
+        def item_matches(item):
+            """Checks if a single item matches all active filters."""
+            if not item:
+                return False
+
+            data = item.data(role=Qt.ItemDataRole.UserRole)
+            if not data:
+                return False
+
+            # Check substring name filters (for general text)
+            item_name_lower = data.get("name", "").lower()
+            for f in name_filters:
+                if f not in item_name_lower:
+                    return False
+
+            # Check key-value filters
+            for key, value in kv_filters.items():
+                if key == 'name' and isinstance(value, list):
+                    # Exact match for the comma-separated list
+                    if item_name_lower not in value:
+                        return False
+                else:
+                    # Substring match for other key-value pairs
+                    if value not in str(data.get(key, "")).lower():
+                        return False
+            return True
+
         def recurse(parent_item):
-            match_found_in_children = False
+            """
+            Recursively applies the filter. A parent is visible if it matches
+            the filter OR if any of its descendants are visible.
+            """
+            any_child_is_visible = False
             for r in range(parent_item.rowCount()):
                 child_item = parent_item.child(r, 0)
-                # Recurse first to see if any children match
-                child_matches = recurse(child_item)
 
-                # Check if the current item matches
-                item_text = child_item.text().lower()
-                current_item_matches = text.lower() in item_text
+                # A child is visible if its own children are visible
+                any_grandchild_is_visible = recurse(child_item)
 
-                # The row should be visible if the item itself matches, or if any of its children match
-                is_visible = current_item_matches or child_matches
+                # or if it matches the filter directly.
+                self_matches = item_matches(child_item)
+
+                is_visible = self_matches or any_grandchild_is_visible
                 self.exp_tree.setRowHidden(r, parent_item.index(), not is_visible)
 
                 if is_visible:
-                    match_found_in_children = True
-            return match_found_in_children
+                    any_child_is_visible = True
+
+            return any_child_is_visible
 
         if hasattr(self, "exp_model"):
             recurse(self.exp_model.invisibleRootItem())
@@ -595,6 +639,24 @@ class MainGUI(QMainWindow):
             else:
                 QMessageBox.warning(self, "Error", message)
 
+    def select_parent_experiment(self):
+        """
+        Finds and selects the parent of the currently selected experiment.
+        """
+        exp_name = self.get_selected_experiment_name()
+        if not exp_name:
+            return
+
+        config, err = self.manager.load_experiment_config(exp_name)
+        if err:
+            # This can happen if the config file is deleted or corrupt.
+            # We don't need to show a message box here, just do nothing.
+            return
+
+        parent_name = config.get("parent_experiment")
+        if parent_name:
+            self.select_experiment_by_name(parent_name)
+
     def clear_comparison(self):
         """
         Clears the comparison list.
@@ -652,6 +714,7 @@ class MainGUI(QMainWindow):
         self.delete_button.setEnabled(num_selected > 0 and are_all_stopped)
         self.stop_button.setEnabled(num_selected > 0 and are_any_running)
         self.compare_button.setEnabled(num_selected > 0)
+        self.select_parent_button.setEnabled(False)  # Default to disabled; enabled in _display_single_experiment
 
         # --- Main display logic ---
         if self.comparison_list:
