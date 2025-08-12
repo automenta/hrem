@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import pytest
 import os
+from unittest.mock import patch
 from src.training import Trainer
 from src.datasets import ReverseDataset
 from typing import Dict
@@ -94,3 +95,46 @@ def test_trainer_run(trainer_setup):
     assert os.path.exists(os.path.join(results_dir, "config.json"))
     assert os.path.exists(os.path.join(results_dir, "results.json"))
     assert os.path.exists(os.path.join(results_dir, "best_model.pt"))
+
+
+def test_torch_compile_enabled():
+    """Tests that torch.compile is called when enabled in the config."""
+    with patch("torch.compile") as mock_compile:
+        model = MockModel()
+        train_ds = ReverseDataset(size=20, seq_len=16)
+        test_ds = ReverseDataset(size=10, seq_len=16)
+        config = {
+            "experiment_name": "test_compile_experiment",
+            "dataset": {"name": "reverse"},
+            "training": {
+                "batch_size": 4,
+                "epochs": 1,
+                "learning_rate": 0.001,
+                "use_torch_compile": True,
+            },
+        }
+        Trainer(model, train_ds, test_ds, config)
+        mock_compile.assert_called_once()
+
+
+def test_one_cycle_lr_scheduler():
+    """Tests the OneCycleLR scheduler setup."""
+    model = MockModel()
+    train_ds = ReverseDataset(size=20, seq_len=16)
+    test_ds = ReverseDataset(size=10, seq_len=16)
+    config = {
+        "experiment_name": "test_one_cycle_lr",
+        "dataset": {"name": "reverse"},
+        "training": {
+            "batch_size": 4,
+            "epochs": 1,
+            "learning_rate": 0.001,
+            "lr_scheduler": {
+                "enabled": True,
+                "type": "OneCycleLR",
+                "max_lr": 0.01,
+            },
+        },
+    }
+    trainer = Trainer(model, train_ds, test_ds, config)
+    assert isinstance(trainer.lr_scheduler, torch.optim.lr_scheduler.OneCycleLR)

@@ -4,7 +4,7 @@ import time
 import optuna
 import torch
 import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -33,6 +33,24 @@ class Trainer:
             torch.backends.cudnn.benchmark = True
 
         self.model = model.to(self.device)
+
+        # Torch Compile
+        if self.training_params.get("use_torch_compile", False):
+            try:
+                # Check for PyTorch 2.0+
+                if hasattr(torch, "compile"):
+                    self.model = torch.compile(self.model)
+                    print("Model compiled with torch.compile")
+                else:
+                    print(
+                        "Warning: torch.compile not found. "
+                        "Requires PyTorch 2.0 or later. "
+                        "Continuing without compilation."
+                    )
+            except Exception as e:
+                print(f"Warning: torch.compile failed with error: {e}")
+                print("Continuing without compilation.")
+
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
 
@@ -61,15 +79,24 @@ class Trainer:
 
         # Learning Rate Scheduler
         self.lr_scheduler_params = self.training_params.get("lr_scheduler", {})
+        self.lr_scheduler = None
         if self.lr_scheduler_params.get("enabled", False):
-            self.lr_scheduler = ReduceLROnPlateau(
-                self.optimizer,
-                mode=self.lr_scheduler_params.get("mode", "min"),
-                factor=self.lr_scheduler_params.get("factor", 0.1),
-                patience=self.lr_scheduler_params.get("patience", 10),
-            )
-        else:
-            self.lr_scheduler = None
+            scheduler_type = self.lr_scheduler_params.get("type", "ReduceLROnPlateau")
+
+            if scheduler_type == "ReduceLROnPlateau":
+                self.lr_scheduler = ReduceLROnPlateau(
+                    self.optimizer,
+                    mode=self.lr_scheduler_params.get("mode", "min"),
+                    factor=self.lr_scheduler_params.get("factor", 0.1),
+                    patience=self.lr_scheduler_params.get("patience", 10),
+                )
+            elif scheduler_type == "OneCycleLR":
+                self.lr_scheduler = OneCycleLR(
+                    self.optimizer,
+                    max_lr=self.lr_scheduler_params.get("max_lr", 0.01),
+                    steps_per_epoch=len(self.train_loader),
+                    epochs=self.training_params.get("epochs", 10),
+                )
 
         # Early Stopping
         self.early_stopping_params = self.training_params.get("early_stopping", {})
@@ -110,7 +137,7 @@ class Trainer:
                 if trial.should_prune():
                     raise optuna.exceptions.TrialPruned()
 
-            if self.lr_scheduler:
+            if self.lr_scheduler and not isinstance(self.lr_scheduler, OneCycleLR):
                 self.lr_scheduler.step(test_loss)
 
             if test_loss < self.early_stopping_best_loss:
@@ -229,6 +256,9 @@ class Trainer:
                     self.model.parameters(), self.grad_clip_norm
                 )
             self.optimizer.step()
+
+            if isinstance(self.lr_scheduler, OneCycleLR):
+                self.lr_scheduler.step()
 
             total_loss += loss.item()
             pbar.set_postfix({"loss": loss.item()})

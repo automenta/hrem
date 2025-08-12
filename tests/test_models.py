@@ -1,6 +1,6 @@
 import torch
 import pytest
-from src.models import MLP, HREM, HRM
+from src.models import MLP, HREM, HRM, Mamba
 
 
 # --- Fixtures ---
@@ -105,3 +105,9 @@ def test_hrem_language_model_forward(dummy_lm_input, hrem_config):
 
     assert "logits" in output
     assert output["logits"].shape == (4, 15, 50)
+
+
+def test_mamba_forward(dummy_seq_input):
+    model = Mamba(d_model=8)
+    output = model(dummy_seq_input)
+    assert output.shape == dummy_seq_input.shape

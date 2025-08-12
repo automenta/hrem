@@ -61,3 +61,4 @@ typing-inspection==0.4.1
 typing_extensions==4.14.1
 tzdata==2025.2
 watchdog==6.0.0
+einops==0.8.0

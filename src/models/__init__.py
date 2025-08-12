@@ -7,6 +7,7 @@ from .hrm import HierarchicalReasoningModel_ACTV1
 from .lstm import LSTM
 from .rnn import RNN
 from .transformer import Transformer
+from .mamba import Mamba
 
 # Rename for consistency with the project's naming conventions (e.g. HREM)
 HRM = HierarchicalReasoningModel_ACTV1
@@ -19,4 +20,5 @@ __all__ = [
     "LSTM",
     "RNN",
     "Transformer",
+    "Mamba",
 ]

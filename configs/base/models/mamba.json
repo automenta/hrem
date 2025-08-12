@@ -1,0 +1,11 @@
+{
+  "model": {
+    "name": "mamba",
+    "params": {
+      "d_model": 256,
+      "d_state": 16,
+      "d_conv": 4,
+      "expand": 2
+    }
+  }
+}

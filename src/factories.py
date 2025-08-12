@@ -1,4 +1,4 @@
-from src.models import MLP, HRM, HREM, LSTM, RNN, Transformer
+from src.models import MLP, HRM, HREM, LSTM, RNN, Transformer, Mamba
 from src.datasets import (
     ReverseDataset,
     TinyShakespeareDataset,
@@ -15,6 +15,7 @@ MODEL_REGISTRY = {
     "lstm": LSTM,
     "rnn": RNN,
     "transformer": Transformer,
+    "mamba": Mamba,
 }
 
 # Registry for datasets

@@ -9,6 +9,15 @@
   "training": {
     "epochs": 10,
     "batch_size": 16,
-    "learning_rate": 0.0005
+    "learning_rate": 0.0005,
+    "use_torch_compile": false,
+    "lr_scheduler": {
+      "enabled": false,
+      "type": "ReduceLROnPlateau",
+      "mode": "min",
+      "factor": 0.1,
+      "patience": 10,
+      "max_lr": 0.01
+    }
   }
 }
