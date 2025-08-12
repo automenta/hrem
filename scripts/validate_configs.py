@@ -18,6 +18,10 @@ def validate_all_configs(config_dir):
     invalid_configs = []
 
     for config_file in config_files:
+        if config_file == "default.json":
+            print(f"Skipping {config_file} as it is a base configuration.")
+            continue
+
         config_path = os.path.join(config_dir, config_file)
         try:
             print(f"Validating {config_file}...")

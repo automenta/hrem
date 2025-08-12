@@ -99,8 +99,8 @@ def test_trainer_run(trainer_setup):
 
 def test_torch_compile_enabled():
     """Tests that torch.compile is called when enabled in the config."""
-    with patch("torch.compile") as mock_compile:
-        model = MockModel()
+    model = MockModel()
+    with patch("torch.compile", return_value=model) as mock_compile:
         train_ds = ReverseDataset(size=20, seq_len=16)
         test_ds = ReverseDataset(size=10, seq_len=16)
         config = {
@@ -114,7 +114,7 @@ def test_torch_compile_enabled():
             },
         }
         Trainer(model, train_ds, test_ds, config)
-        mock_compile.assert_called_once()
+        mock_compile.assert_called_once_with(model)
 
 
 def test_one_cycle_lr_scheduler():

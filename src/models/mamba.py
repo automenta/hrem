@@ -27,8 +27,8 @@ class Mamba(nn.Module):
             groups=self.d_inner,
             padding=d_conv - 1,
         )
-        self.x_proj = nn.Linear(self.d_inner, self.d_state + 1, bias=False)
-        self.dt_proj = nn.Linear(self.d_state, self.d_inner, bias=True)
+        self.x_proj = nn.Linear(self.d_inner, 1 + self.d_state * 2, bias=False)
+        self.dt_proj = nn.Linear(1, self.d_inner, bias=True)
 
         A = repeat(torch.arange(1, self.d_state + 1), "n -> d n", d=self.d_inner)
         self.A_log = nn.Parameter(torch.log(A))

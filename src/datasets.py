@@ -173,7 +173,7 @@ class CopyTaskDataset(Dataset):
                 "output_size": (self.seq_len * 2 + 1) * self.vec_len,
             }
         elif model_name == "transformer":
-            return {"output_size": self.vec_len}
+            return {"input_size": self.vec_len, "output_size": self.vec_len}
         else:
             return {"input_size": self.vec_len}
 
@@ -239,6 +239,9 @@ class AssociativeRecallDataset(Dataset):
                 "output_size": (self.max_items + 2) * (self.data_len + 2),
             }
         elif model_name == "transformer":
-            return {"output_size": self.data_len + 2}
+            return {
+                "input_size": self.data_len + 2,
+                "output_size": self.data_len + 2,
+            }
         else:
             return {"input_size": self.data_len + 2}
