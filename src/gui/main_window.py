@@ -33,6 +33,9 @@ from .archive_dialog import ArchiveManagerDialog
 from .trajectory_view import TrajectoryView
 from .scatter_plot_view import ScatterPlotView
 from .unified_launch_dialog import UnifiedLaunchDialog
+from .challenge_view import ChallengeView
+from .challenge_launcher_dialog import ChallengeLauncherDialog
+from .search_launcher_dialog import SearchLauncherDialog
 from .constants import (
     CONFIGS_DIR,
     INITIAL_SPLITTER_SIZES,
@@ -82,6 +85,7 @@ class MainGUI(QMainWindow):
         self._create_experiments_tab()
         self._create_trajectory_tab()
         self._create_analysis_tab()
+        self._create_challenges_tab()
 
     def _create_management_tab(
         self,
@@ -152,8 +156,15 @@ class MainGUI(QMainWindow):
         # --- Buttons ---
         self.refresh_button = QPushButton("Refresh List")
         self.refresh_button.clicked.connect(self.refresh_ui)
-        self.launch_button = QPushButton("Launch New")
+        self.launch_button = QPushButton("Launch from Config")
+        self.launch_button.setToolTip("Launch a single experiment from a JSON config file.")
         self.launch_button.clicked.connect(self.launch_new_experiment)
+        self.launch_challenge_button = QPushButton("Launch Challenge...")
+        self.launch_challenge_button.setToolTip("Launch a race between a challenger and multiple baseline models.")
+        self.launch_challenge_button.clicked.connect(self.launch_new_challenge)
+        self.launch_search_button = QPushButton("Launch Search...")
+        self.launch_search_button.setToolTip("Interactively design and launch a hyperparameter search.")
+        self.launch_search_button.clicked.connect(self.launch_new_search)
         self.archive_manager_button = QPushButton("Manage Archives...")
         self.archive_manager_button.clicked.connect(self.open_archive_manager)
         self.clone_button = QPushButton("Clone")
@@ -218,6 +229,8 @@ class MainGUI(QMainWindow):
             [
                 self.refresh_button,
                 self.launch_button,
+                self.launch_challenge_button,
+                self.launch_search_button,
                 self.clone_button,
                 self.rename_button,
                 self.stop_button,
@@ -271,6 +284,37 @@ class MainGUI(QMainWindow):
             self._filter_experiments_from_analysis
         )
         layout.addWidget(self.scatter_plot_view)
+
+    def launch_new_challenge(self):
+        """
+        Opens a dialog to launch a new baseline challenge.
+        """
+        dialog = ChallengeLauncherDialog(self.manager, self)
+        if dialog.exec():
+            launch_info = dialog.get_launch_info()
+            if launch_info:
+                success, message = self.manager.launch_experiment_race(launch_info)
+                if success:
+                    QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
+                else:
+                    QMessageBox.warning(self, "Launch Failed", message)
+
+    def launch_new_search(self):
+        """
+        Opens a dialog to launch a new hyperparameter search.
+        """
+        dialog = SearchLauncherDialog(self.manager, self)
+        if dialog.exec():
+            # The dialog now handles the launch, so we just need to refresh
+            QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
+
+    def _create_challenges_tab(self):
+        """
+        Creates the 'Challenges' tab for viewing experiment races.
+        """
+        self.challenge_view = ChallengeView(self.manager)
+        self.tabs.addTab(self.challenge_view, "Challenges")
+        self.challenge_view.experiment_selected.connect(self.select_experiment_by_name)
 
     def _filter_experiments_from_analysis(self, names: list):
         """
@@ -577,6 +621,8 @@ class MainGUI(QMainWindow):
         self.update_selected_experiment_display()
         self.trajectory_view.draw_graph()
         self.scatter_plot_view.update_plot()
+        if hasattr(self, "challenge_view"):
+            self.challenge_view.refresh()
 
     def update_selected_experiment_display(self):
         """
@@ -626,37 +672,74 @@ class MainGUI(QMainWindow):
 
     def _display_search_summary(self, exp_name, exp_data):
         """
-        Displays a summary of a hyperparameter search in the diff_table.
+        Displays a summary of a hyperparameter search.
         """
-        self.config_display.setVisible(False)
-        self.plot_widget.setVisible(False)
+        self.config_display.setVisible(True)
+        self.plot_widget.setVisible(False) # No single plot for a search
         self.diff_table.setVisible(True)
+        self.plot_widget.setTitle(f"Search Summary: {exp_name}")
 
         graph = self.manager.get_experiment_graph()
-        children = [edge[1] for edge in graph["edges"] if edge[0] == exp_name]
+        children_names = [edge[1] for edge in graph["edges"] if edge[0] == exp_name]
+        trials = [graph["nodes"][name] for name in children_names if name in graph["nodes"]]
 
-        if not children:
-            self.diff_table.setRowCount(1)
-            self.diff_table.setColumnCount(1)
-            self.diff_table.setItem(0, 0, QTableWidgetItem("No trials found for this search."))
+        if not trials:
+            self.config_display.setText("No trials found for this search yet.")
+            self.diff_table.setVisible(False)
             return
 
-        # --- Gather trial data ---
-        trial_data = []
-        for child_name in children:
-            if child_name in graph["nodes"]:
-                trial_data.append(graph["nodes"][child_name])
+        # --- Find best trial ---
+        best_trial = None
+        best_loss = float('inf')
+        for trial in trials:
+            try:
+                loss = float(trial["final_loss"])
+                if loss < best_loss:
+                    best_loss = loss
+                    best_trial = trial
+            except (ValueError, TypeError):
+                continue # Skip trials without a valid loss
 
-        # --- Populate diff table with trial results ---
-        headers = ["Trial Name", "Status", "Final Loss"] # Add more as needed
+        # --- Display best trial info ---
+        if best_trial:
+            best_trial_config, _ = self.manager.load_experiment_config(best_trial["name"])
+            summary_text = (
+                f"<b>Best Trial:</b> {best_trial['name']}<br>"
+                f"<b>Best Test Loss:</b> {best_trial['final_loss']}<br><br>"
+                f"<b>Best Parameters:</b><br>"
+            )
+            # We only show the tuned params for brevity
+            search_config, _ = self.manager.load_experiment_config(exp_name)
+            tuned_params = search_config.get("search", {}).get("params", {}).keys()
+
+            flat_config = self._flatten_dict(best_trial_config)
+            for p in tuned_params:
+                summary_text += f"- {p}: {flat_config.get(p, 'N/A')}<br>"
+
+            self.config_display.setHtml(summary_text)
+        else:
+            self.config_display.setText("No completed trials with valid loss values yet.")
+
+        # --- Populate diff table with all trial results ---
+        search_config, _ = self.manager.load_experiment_config(exp_name)
+        tuned_params = list(search_config.get("search", {}).get("params", {}).keys())
+
+        headers = ["Trial Name", "Status", "Final Loss"] + tuned_params
         self.diff_table.setColumnCount(len(headers))
         self.diff_table.setHorizontalHeaderLabels(headers)
-        self.diff_table.setRowCount(len(trial_data))
+        self.diff_table.setRowCount(len(trials))
 
-        for row, trial in enumerate(trial_data):
+        for row, trial in enumerate(trials):
             self.diff_table.setItem(row, 0, QTableWidgetItem(trial["name"]))
             self.diff_table.setItem(row, 1, QTableWidgetItem(trial["status"]))
             self.diff_table.setItem(row, 2, QTableWidgetItem(str(trial["final_loss"])))
+
+            trial_config, _ = self.manager.load_experiment_config(trial["name"])
+            if trial_config:
+                flat_config = self._flatten_dict(trial_config)
+                for i, key in enumerate(tuned_params):
+                    val = flat_config.get(key, "N/A")
+                    self.diff_table.setItem(row, 3 + i, QTableWidgetItem(str(val)))
 
         self.diff_table.resizeColumnsToContents()
 
