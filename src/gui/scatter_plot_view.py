@@ -24,7 +24,9 @@ class CustomPlotWidget(pg.PlotWidget):
         self.parent_view = parent_view
 
     def contextMenuEvent(self, event):
-        menu = QMenu(self)
+        menu = self.getPlotItem().vb.getMenu(event)
+        menu.addSeparator()
+
         filter_action = QAction("Filter selected in Experiments Tab", menu)
         clear_action = QAction("Clear selection", menu)
 
@@ -35,7 +37,13 @@ class CustomPlotWidget(pg.PlotWidget):
 
         menu.addAction(filter_action)
         menu.addAction(clear_action)
-        menu.exec(event.globalPos())
+        # The menu is executed by the default context menu handler, so we don't need to call exec.
+        # However, since we are overriding the event, we need to handle it.
+        # By getting the menu and adding actions, we have modified the menu that will be
+        # displayed by the default event handler. We don't need to call exec_ ourselves.
+        # We do, however, need to call the superclass's method to ensure the event is processed.
+        # Since PlotWidget itself doesn't implement contextMenuEvent, we pass it to the PlotItem.
+        self.getPlotItem().contextMenuEvent(event)
 
 class ScatterPlotView(QWidget):
     """

@@ -70,7 +70,7 @@ def test_get_experiment_graph(temp_experiment_dirs):
     assert set(graph["roots"]) == {"exp1", "exp5"}
     assert set(graph["edges"]) == {("exp1", "exp2"), ("exp1", "exp3"), ("exp3", "exp4")}
 
-@patch("src.gui.experiment_manager.ExperimentManager.launch_experiment")
+@patch("src.gui.experiment_manager.BaseProcessManager.launch_process")
 def test_launch_experiment_race(mock_launch, temp_experiment_dirs):
     results_dir = temp_experiment_dirs
     manager = ExperimentManager()

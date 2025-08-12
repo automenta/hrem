@@ -19,3 +19,4 @@ pyhocon==0.3.59
 plotly
 PyQt6
 pyqtgraph
+watchdog

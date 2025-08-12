@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QMenu,
 )
-from PyQt6.QtCore import Qt, QTimer, QItemSelectionModel
+from PyQt6.QtCore import Qt, QTimer, QItemSelectionModel, QSettings, QUrl, QDesktopServices
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
 
 from .experiment_manager import ExperimentManager
@@ -37,6 +37,8 @@ from .scatter_plot_view import ScatterPlotView
 from .unified_launch_dialog import UnifiedLaunchDialog
 from .challenge_view import ChallengeView
 from .log_deck import LogDeckWindow
+from .file_watcher import ResultsPathWatcher
+from watchdog.observers import Observer
 from .constants import (
     INITIAL_SPLITTER_SIZES,
     LAUNCH_DELAY_MS,
@@ -57,6 +59,9 @@ class MainGUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("HREM Experimentation Platform")
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
+
+        self.settings = QSettings("HREM_GUI_Dev", "HREM_GUI")
+
         self.manager = ExperimentManager()
         self.comparison_list = []
         self.current_train_loss = []
@@ -65,13 +70,11 @@ class MainGUI(QMainWindow):
 
         self._init_ui()
         self._load_filter_cache()
+        self._load_settings()
         self.refresh_ui()
 
-        # --- Timer for live updates ---
-        self.timer = QTimer()
-        self.timer.setInterval(REFRESH_INTERVAL_MS)
-        self.timer.timeout.connect(self.refresh_ui)
-        self.timer.start()
+        # --- File System Watcher for live updates ---
+        self._init_watcher()
 
     def _load_filter_cache(self):
         if os.path.exists(FILTER_CACHE_FILE):
@@ -91,7 +94,37 @@ class MainGUI(QMainWindow):
 
     def closeEvent(self, event):
         self._save_filter_cache()
+        self._save_settings()
+        self.observer.stop()
+        self.observer.join()
         super().closeEvent(event)
+
+    def _save_settings(self):
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("main_splitter_state", self.main_splitter.saveState())
+        self.settings.setValue("right_splitter_state", self.right_panel_splitter.saveState())
+
+    def _load_settings(self):
+        geometry = self.settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+
+        main_splitter_state = self.settings.value("main_splitter_state")
+        if main_splitter_state:
+            self.main_splitter.restoreState(main_splitter_state)
+
+        right_splitter_state = self.settings.value("right_splitter_state")
+        if right_splitter_state:
+            self.right_panel_splitter.restoreState(right_splitter_state)
+
+    def _init_watcher(self):
+        self.observer = Observer()
+        self.watcher = ResultsPathWatcher()
+        self.watcher.directory_changed.connect(self.refresh_ui)
+        # Ensure the results directory exists before observing
+        os.makedirs(self.manager.RESULTS_DIR, exist_ok=True)
+        self.observer.schedule(self.watcher, self.manager.RESULTS_DIR, recursive=True)
+        self.observer.start()
 
     def _init_ui(self):
         """
@@ -124,8 +157,8 @@ class MainGUI(QMainWindow):
         tab = QWidget()
         self.tabs.addTab(tab, tab_name)
         layout = QHBoxLayout(tab)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(splitter)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        layout.addWidget(self.main_splitter)
 
         # --- Left Panel ---
         left_panel = QWidget()
@@ -143,11 +176,11 @@ class MainGUI(QMainWindow):
         for button in buttons:
             button_layout.addWidget(button)
         left_layout.addLayout(button_layout)
-        splitter.addWidget(left_panel)
+        self.main_splitter.addWidget(left_panel)
 
         # --- Right Panel ---
-        splitter.addWidget(right_panel)
-        splitter.setSizes(INITIAL_SPLITTER_SIZES)
+        self.main_splitter.addWidget(right_panel)
+        self.main_splitter.setSizes(INITIAL_SPLITTER_SIZES)
 
     def _create_experiments_tab(self):
         """
@@ -190,7 +223,7 @@ class MainGUI(QMainWindow):
         self.clear_comparison_button.setEnabled(False)
 
         # --- Right Panel ---
-        right_panel = QSplitter(Qt.Orientation.Vertical)
+        self.right_panel_splitter = QSplitter(Qt.Orientation.Vertical)
         plot_container = QWidget()
         plot_layout = QVBoxLayout(plot_container)
         plot_layout.setContentsMargins(0, 0, 0, 0)
@@ -219,10 +252,18 @@ class MainGUI(QMainWindow):
         )
         self.diff_table.setVisible(False)
 
-        right_panel.addWidget(plot_container)
-        right_panel.addWidget(self.config_display)
-        right_panel.addWidget(self.diff_table)
-        right_panel.setSizes([600, 200, 100])
+        self.notes_display_group = QGroupBox("Notes")
+        notes_display_layout = QVBoxLayout(self.notes_display_group)
+        self.notes_display = QTextEdit()
+        self.notes_display.setReadOnly(True)
+        notes_display_layout.addWidget(self.notes_display)
+        self.notes_display_group.setVisible(False)
+
+        self.right_panel_splitter.addWidget(plot_container)
+        self.right_panel_splitter.addWidget(self.config_display)
+        self.right_panel_splitter.addWidget(self.diff_table)
+        self.right_panel_splitter.addWidget(self.notes_display_group)
+        self.right_panel_splitter.setSizes([500, 200, 150, 150])
 
         self._create_management_tab(
             "Mission Control",
@@ -235,7 +276,7 @@ class MainGUI(QMainWindow):
                 self.compare_button,
                 self.clear_comparison_button,
             ],
-            right_panel,
+            self.right_panel_splitter,
         )
 
         self.v_line = pg.InfiniteLine(angle=90, movable=False)
@@ -269,6 +310,12 @@ class MainGUI(QMainWindow):
         view_logs_action.triggered.connect(self.view_selected_logs)
         view_logs_action.setEnabled(num_selected == 1)
         menu.addAction(view_logs_action)
+
+        open_log_action = QAction("Open Log File in Editor", self)
+        open_log_action.triggered.connect(self.open_log_file_externally)
+        open_log_action.setEnabled(num_selected == 1)
+        menu.addAction(open_log_action)
+
         menu.addSeparator()
 
         stop_action = QAction("Stop", self)
@@ -282,10 +329,10 @@ class MainGUI(QMainWindow):
         menu.addAction(force_stop_action)
         menu.addSeparator()
 
-        clone_action = QAction("Clone...", self)
-        clone_action.triggered.connect(self.clone_selected_experiment)
-        clone_action.setEnabled(num_selected == 1 and are_all_stopped)
-        menu.addAction(clone_action)
+        edit_action = QAction("Edit & Re-launch...", self)
+        edit_action.triggered.connect(self.edit_selected_experiment)
+        edit_action.setEnabled(num_selected == 1 and are_all_stopped)
+        menu.addAction(edit_action)
 
         rename_action = QAction("Rename...", self)
         rename_action.triggered.connect(self.rename_selected_experiment)
@@ -342,54 +389,74 @@ class MainGUI(QMainWindow):
         filter_text = f"name:{','.join(names)}"
         self.filter_input.setText(filter_text)
 
-    def launch_new_experiment(self):
-        default_config = {"model": {}, "dataset": {}, "training": {}}
-        dialog = UnifiedLaunchDialog(config=default_config, parent=self)
-        if not dialog.exec():
-            return
-        launch_info = dialog.get_launch_info()
+    def _launch_from_info(self, launch_info):
         if not launch_info:
             return
+
         run_type = launch_info.get("type")
         success, message = False, "An unknown error occurred."
+
         if run_type == "Challenge":
-            if hasattr(self.manager, "launch_experiment_race"):
-                success, message = self.manager.launch_experiment_race(launch_info)
-            else:
-                message = "Functionality to launch challenges is not implemented."
-        elif run_type in ["Single Run", "Hyperparameter Search"]:
+            success, message = self.manager.launch_experiment_race(launch_info)
+        elif run_type == "Single Run":
             success, message = self.manager.launch_experiment_from_config(
+                launch_info["config"], launch_info["name"]
+            )
+        elif run_type == "Hyperparameter Search":
+            success, message = self.manager.launch_hyperparameter_search(
                 launch_info["config"], launch_info["name"]
             )
         else:
             message = f"Unknown run type '{run_type}'."
+
         if success:
             QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
+            new_name = launch_info.get("name") or launch_info.get("base_name")
+            if new_name:
+                # For challenges, we select the challenger
+                if run_type == "Challenge":
+                    self.select_experiment_by_name(f"{new_name}_challenger")
+                else:
+                    self.select_experiment_by_name(new_name)
         else:
             QMessageBox.warning(self, "Launch Failed", message)
 
-    def clone_selected_experiment(self):
+    def launch_new_experiment(self):
+        default_config = {"model": {}, "dataset": {}, "training": {}}
+        dialog = UnifiedLaunchDialog(config=default_config, parent=self)
+        if dialog.exec():
+            self._launch_from_info(dialog.get_launch_info())
+
+    def edit_selected_experiment(self):
         exp_names = self.get_selected_experiment_names()
-        if len(exp_names) != 1: return
+        if len(exp_names) != 1:
+            return
         original_name = exp_names[0]
+
         original_config, err = self.manager.load_experiment_config(original_name)
         if err:
-            QMessageBox.warning(self, "Clone Failed", f"Could not load config for {original_name}: {err}")
+            QMessageBox.warning(
+                self, "Load Error", f"Could not load config for {original_name}: {err}"
+            )
             return
-        new_name = f"{original_name}_clone"
+
+        suggested_name = f"{original_name}_edit"
+        new_name, ok = QInputDialog.getText(
+            self, "Edit & Re-launch Experiment", f"Enter new name for this version of '{original_name}':",
+            QLineEdit.EchoMode.Normal, suggested_name
+        )
+        if not (ok and new_name):
+            return
+
+        if new_name == original_name:
+            QMessageBox.warning(self, "Validation Error", "The new experiment name must be different from the original.")
+            return
+
         original_config["parent_experiment"] = original_name
+
         dialog = UnifiedLaunchDialog(config=original_config, exp_name=new_name, parent=self)
         if dialog.exec():
-            launch_info = dialog.get_launch_info()
-            if launch_info:
-                success, message = self.manager.launch_experiment_from_config(
-                    launch_info["config"], launch_info["name"]
-                )
-                if success:
-                    QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
-                    self.select_experiment_by_name(launch_info["name"])
-                else:
-                    QMessageBox.warning(self, "Launch Failed", message)
+            self._launch_from_info(dialog.get_launch_info())
 
     def populate_experiment_list(self):
         self.exp_tree.setSortingEnabled(False)
@@ -558,6 +625,7 @@ class MainGUI(QMainWindow):
         self.config_display.clear()
         self.diff_table.setRowCount(0)
         self.diff_table.setColumnCount(0)
+        self.notes_display.clear()
 
         selected_names = self.get_selected_experiment_names()
         num_selected = len(selected_names)
@@ -567,6 +635,7 @@ class MainGUI(QMainWindow):
         if self.comparison_list:
             self._display_comparison()
         elif num_selected == 1:
+            self.notes_display_group.setVisible(True)
             exp_name = selected_names[0]
             exp_data = self.manager.get_experiment_graph()["nodes"].get(exp_name)
             if exp_data:
@@ -580,6 +649,7 @@ class MainGUI(QMainWindow):
             self.plot_widget.setTitle("No experiment selected")
             self.config_display.clear()
             self.diff_table.setVisible(False)
+            self.notes_display_group.setVisible(False)
             self.trajectory_view.clear_highlight()
             self.scatter_plot_view.clear_highlight()
 
@@ -587,6 +657,7 @@ class MainGUI(QMainWindow):
         self.config_display.setVisible(True)
         self.plot_widget.setVisible(False)
         self.diff_table.setVisible(True)
+        self.notes_display_group.setVisible(True)
         self.plot_widget.setTitle(f"Search Summary: {exp_name}")
         graph = self.manager.get_experiment_graph()
         children_names = [edge[1] for edge in graph["edges"] if edge[0] == exp_name]
@@ -614,8 +685,14 @@ class MainGUI(QMainWindow):
             self.config_display.setHtml(summary_text)
         else:
             self.config_display.setText("No completed trials with valid loss values yet.")
+
         search_config, _ = self.manager.load_experiment_config(exp_name)
-        tuned_params = list(search_config.get("search", {}).get("params", {}).keys())
+        if search_config:
+            self.notes_display.setText(search_config.get("notes", "No notes for this search."))
+            tuned_params = list(search_config.get("search", {}).get("params", {}).keys())
+        else:
+            tuned_params = []
+
         headers = ["Trial Name", "Status", "Final Loss"] + tuned_params
         self.diff_table.setColumnCount(len(headers))
         self.diff_table.setHorizontalHeaderLabels(headers)
@@ -636,6 +713,7 @@ class MainGUI(QMainWindow):
         self.diff_table.setVisible(False)
         self.config_display.setVisible(True)
         self.plot_widget.setVisible(True)
+        self.notes_display_group.setVisible(True)
         self._update_metric_selector([exp_name])
         self.current_train_loss, self.current_test_loss = [], []
         results_data, res_error = self.manager.load_experiment_results(exp_name)
@@ -653,13 +731,17 @@ class MainGUI(QMainWindow):
         else:
             self.plot_widget.setTitle(f"No results available for: {exp_name}")
         config_data, conf_error = self.manager.load_experiment_config(exp_name)
-        if conf_error: self.config_display.setText(conf_error)
-        elif config_data: self.config_display.setText(json.dumps(config_data, indent=4))
+        if conf_error:
+            self.config_display.setText(conf_error)
+        elif config_data:
+            self.config_display.setText(json.dumps(config_data, indent=4))
+            self.notes_display.setText(config_data.get("notes", "No notes for this experiment."))
 
     def _display_comparison(self):
         self.config_display.setVisible(False)
         self.diff_table.setVisible(True)
         self.plot_widget.setVisible(True)
+        self.notes_display_group.setVisible(False)
         self._update_diff_table(self.comparison_list)
         self._update_metric_selector(self.comparison_list)
         self.plot_widget.addLegend()
@@ -754,3 +836,14 @@ class MainGUI(QMainWindow):
         log_content = self.manager.get_log_contents(exp_name)
         self.log_deck.add_log_view(exp_name, log_content)
         self.log_deck.show()
+
+    def open_log_file_externally(self):
+        exp_name = self.get_selected_experiment_name()
+        if not exp_name:
+            return
+        log_path = self.manager.get_log_path(exp_name)
+        if log_path and os.path.exists(log_path):
+            url = QUrl.fromLocalFile(log_path)
+            QDesktopServices.openUrl(url)
+        else:
+            QMessageBox.warning(self, "File Not Found", f"Log file for {exp_name} not found.")

@@ -362,6 +362,7 @@ class ExperimentManager(BaseProcessManager):
         base_name = launch_info["base_name"]
         challenger_config_path = launch_info["challenger_config"]
         baseline_models = launch_info["baselines"]
+        notes = launch_info.get("notes")
 
         # 1. Load challenger config
         try:
@@ -373,7 +374,9 @@ class ExperimentManager(BaseProcessManager):
         challenger_exp_name = f"{base_name}_challenger"
         challenger_config["experiment_name"] = challenger_exp_name
         challenger_config["race_id"] = race_id
-        self._prepare_and_launch_exp(challenger_exp_name, challenger_config)
+        if notes:
+            challenger_config["notes"] = notes
+        self._prepare_and_launch_exp(challenger_exp_name, challenger_config, "main.py")
 
         # 3. Prepare and launch baseline experiments
         for baseline_model_name in baseline_models:
@@ -394,7 +397,7 @@ class ExperimentManager(BaseProcessManager):
                 baseline_config.put("race_id", race_id)
                 baseline_config.put("is_baseline_for", challenger_exp_name)
 
-                self._prepare_and_launch_exp(baseline_exp_name, baseline_config)
+                self._prepare_and_launch_exp(baseline_exp_name, baseline_config, "main.py")
 
             except Exception as e:
                 print(f"Failed to create/launch baseline {baseline_model_name}: {e}")
@@ -402,7 +405,7 @@ class ExperimentManager(BaseProcessManager):
 
         return True, f"Experiment race '{base_name}' launched successfully."
 
-    def _prepare_and_launch_exp(self, exp_name: str, config: dict):
+    def _prepare_and_launch_exp(self, exp_name: str, config: dict, script_to_run: str):
         """
         Helper to create an experiment directory, save the config, and launch it.
         """
@@ -410,15 +413,21 @@ class ExperimentManager(BaseProcessManager):
         os.makedirs(exp_dir, exist_ok=True)
 
         config_path = os.path.join(exp_dir, "config.json")
-        with open(config_path, "w") as f:
-            # HOCON config needs to be converted to a plain dict to be json-serializable
-            json.dump(config.as_plain_ordered_dict(), f, indent=4)
 
-        self.launch_experiment(config_path)
+        # Ensure config is a plain dict for JSON serialization
+        if isinstance(config, ConfigTree):
+            config_dict = config.as_plain_ordered_dict()
+        else:
+            config_dict = config
+
+        with open(config_path, "w") as f:
+            json.dump(config_dict, f, indent=4)
+
+        return self.launch_process(config_path, script_to_run)
 
     def launch_experiment_from_config(self, config: dict, exp_name: str) -> (bool, str):
         """
-        Launches an experiment directly from a config dictionary.
+        Launches a single experiment directly from a config dictionary.
         """
         if not exp_name:
             return False, "Experiment name cannot be empty."
@@ -428,10 +437,27 @@ class ExperimentManager(BaseProcessManager):
             return False, f"Experiment '{exp_name}' already exists."
 
         try:
-            self._prepare_and_launch_exp(exp_name, config)
+            self._prepare_and_launch_exp(exp_name, config, "main.py")
             return True, f"Successfully launched {exp_name}."
         except Exception as e:
             return False, f"Failed to launch {exp_name}: {e}"
+
+    def launch_hyperparameter_search(self, config: dict, exp_name: str) -> (bool, str):
+        """
+        Launches a hyperparameter search directly from a config dictionary.
+        """
+        if not exp_name:
+            return False, "Experiment name cannot be empty."
+
+        exp_dir = os.path.join(self.RESULTS_DIR, exp_name)
+        if os.path.exists(exp_dir):
+            return False, f"Search '{exp_name}' already exists."
+
+        try:
+            self._prepare_and_launch_exp(exp_name, config, "search.py")
+            return True, f"Successfully launched search {exp_name}."
+        except Exception as e:
+            return False, f"Failed to launch search {exp_name}: {e}"
 
 
     def get_plottable_metrics(self):
@@ -455,3 +481,9 @@ class ExperimentManager(BaseProcessManager):
         Retrieves the log content for a given experiment.
         """
         return self.read_log_file(exp_name)
+
+    def get_log_path(self, exp_name: str) -> str:
+        """
+        Returns the path to the log file for a given experiment.
+        """
+        return os.path.join(self.RESULTS_DIR, exp_name, "output.log")
