@@ -32,11 +32,18 @@ class ExperimentManager(BaseProcessManager):
         """
         return self.launch_process(config_path, "main.py")
 
-    def stop_experiment(self, exp_name: str) -> bool:
+    def stop_experiment(self, exp_name: str, force: bool = False) -> bool:
         """
         Stops a running experiment process.
+
+        Args:
+            exp_name (str): The name of the experiment to stop.
+            force (bool): If True, forces the process to kill.
+
+        Returns:
+            bool: True if the signal was sent, False otherwise.
         """
-        return self.stop_process(exp_name)
+        return self.stop_process(exp_name, force=force)
 
     def get_experiment_statuses(self) -> dict:
         """
@@ -442,3 +449,9 @@ class ExperimentManager(BaseProcessManager):
             "config.model.params.hidden_dim",
             "config.model.params.n_layers",
         ])
+
+    def get_log_contents(self, exp_name: str) -> str:
+        """
+        Retrieves the log content for a given experiment.
+        """
+        return self.read_log_file(exp_name)

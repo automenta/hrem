@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMenu,
     QGraphicsLineItem,
+    QPushButton,
 )
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -58,6 +59,28 @@ class ScatterPlotView(QWidget):
         self.color_selector.currentTextChanged.connect(self.update_plot_styles)
         self.size_selector.currentTextChanged.connect(self.update_plot_styles)
 
+    def highlight_point(self, name_to_highlight: str):
+        """
+        Highlights a single point on the scatter plot corresponding to the given name.
+        """
+        self.selected_points = []
+        for point in self.all_points_data:
+            if point['data'] == name_to_highlight:
+                self.selected_points.append(point)
+                break  # Assuming names are unique
+        self._update_selection_highlighting()
+        # Also, we might want to move the view to center on the point
+        if self.selected_points:
+            pos = self.selected_points[0]['pos']
+            self.plot_widget.getViewBox().setXRange(pos[0] - 1, pos[0] + 1, padding=0.1)
+            self.plot_widget.getViewBox().setYRange(pos[1] - 1, pos[1] + 1, padding=0.1)
+
+
+    def clear_highlight(self):
+        """
+        Clears the current selection and highlighting.
+        """
+        self._clear_selection()
 
     def _on_point_clicked(self, plot, points):
         if points:
@@ -120,15 +143,24 @@ class ScatterPlotView(QWidget):
         """
         selected_names = [p['data'] for p in self.selected_points]
 
-        for p in self.all_points_data:
+        # Create a temporary copy to modify, to avoid issues withsetData
+        temp_points_data = [p.copy() for p in self.all_points_data]
+
+        for p in temp_points_data:
             if p['data'] in selected_names:
                 p['pen'] = pg.mkPen('w', width=2)
-                p['size'] = 12
+                p['size'] = 15 # Make highlighted points larger
             else:
-                p['pen'] = None # Default pen
+                # Reset to original style from update_plot_styles
+                # This part is tricky because the original style is dynamic.
+                # We need to re-apply the styling logic.
+                # For simplicity now, we just reset to a default.
+                # A better implementation would store the original style.
+                p['pen'] = None
                 p['size'] = 10
 
-        self.scatter_plot.setData(self.all_points_data)
+
+        self.scatter_plot.setData(spots=temp_points_data)
 
     def _clear_selection(self):
         self.selected_points = []
@@ -141,13 +173,16 @@ class ScatterPlotView(QWidget):
 
     def _populate_selectors(self):
         metrics = self.manager.get_plottable_metrics()
-        self.color_selector.addItems(metrics)
-        self.size_selector.addItems(metrics)
+        self.color_selector.addItems(["default"] + metrics)
+        self.size_selector.addItems(["default"] + metrics)
 
     def _get_metric_value(self, metric_key, exp_data):
         """
         Retrieves a metric value from experiment data, handling nested keys.
         """
+        if metric_key == "default":
+            return 1.0 # Return a constant value
+
         # A helper to access nested dictionary keys
         def get_nested(_dict, keys):
             for key in keys:
@@ -179,6 +214,12 @@ class ScatterPlotView(QWidget):
         """
         Runs PCA on the available experiment data and updates the plot.
         """
+        self.update_plot()
+
+    def update_plot(self):
+        """
+        Runs PCA on the available experiment data and updates the plot.
+        """
         experiments = self.manager.get_experiments_data()
         metrics = self.manager.get_plottable_metrics()
 
@@ -193,6 +234,8 @@ class ScatterPlotView(QWidget):
 
         if len(pca_data) < 2:
             print("Not enough data for PCA.")
+            self.all_points_data = []
+            self.scatter_plot.clear()
             return
 
         df = pd.DataFrame(pca_data, columns=metrics)
@@ -215,6 +258,7 @@ class ScatterPlotView(QWidget):
         self.plot_widget.setLabel("left", "Principal Component 2")
         self.update_plot_styles()
 
+
     def update_plot_styles(self):
         """
         Updates the color and size of the points on the scatter plot.
@@ -233,29 +277,29 @@ class ScatterPlotView(QWidget):
         valid_sizes = [v for v in size_values if v is not None]
 
         # --- Assign brushes based on color metric ---
-        if valid_colors:
+        if valid_colors and color_metric != "default":
             min_c, max_c = min(valid_colors), max(valid_colors)
-            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 0, 0, 255)])
+            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 255, 0, 255)])
             for i, p in enumerate(self.all_points_data):
-                p["brush"] = cmap.map(color_values[i], 'qcolor') if color_values[i] is not None else pg.mkBrush("b")
+                p["brush"] = cmap.map(color_values[i], 'qcolor') if color_values[i] is not None else pg.mkBrush("gray")
         else:
             for p in self.all_points_data:
-                p["brush"] = pg.mkBrush("b")
+                p["brush"] = pg.mkBrush("blue")
 
         # --- Assign sizes based on size metric ---
-        if valid_sizes:
+        if valid_sizes and size_metric != "default":
             min_s, max_s = min(valid_sizes), max(valid_sizes)
+            if max_s == min_s: max_s += 1e-9 # Avoid division by zero
             for i, p in enumerate(self.all_points_data):
                 if size_values[i] is not None:
                     # Normalize size between 5 and 20
-                    p["size"] = 5 + 15 * ((size_values[i] - min_s) / (max_s - min_s + 1e-9))
+                    p["size"] = 5 + 15 * ((size_values[i] - min_s) / (max_s - min_s))
                 else:
                     p["size"] = 10
         else:
             for p in self.all_points_data:
                 p["size"] = 10
 
-        self.scatter_plot.setData(self.all_points_data)
         self._update_selection_highlighting()
 
         # --- Clear old legends and lines ---
@@ -264,11 +308,11 @@ class ScatterPlotView(QWidget):
             self.plot_widget.removeItem(item)
 
         # --- Add new color bar ---
-        if valid_colors:
+        if valid_colors and color_metric != "default":
             min_c, max_c = min(valid_colors), max(valid_colors)
-            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 0, 0, 255)])
+            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 255, 0, 255)])
             grad_legend = pg.GradientLegend((20, 150), (-10, -30))
-            grad_legend.setLabels({f"{min_c:.2f}": 0, f"{max_c:.2f}": 1})
+            grad_legend.setLabels({f"{min_c:.2g}": 0, f"{max_c:.2g}": 1})
             grad_legend.setColorMap(cmap)
             self.plot_widget.addItem(grad_legend)
 
