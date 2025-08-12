@@ -126,7 +126,14 @@ class ExperimentManager(BaseProcessManager):
             epoch_time = "N/A"
             race_id = "N/A"
             is_baseline_for = None
+            exp_type = "Single"
             if config:
+                if "search" in config:
+                    exp_type = "Search"
+                elif config.get("is_baseline_for") or config.get("race_id"):
+                    # This is a bit simplistic, might need refinement
+                    exp_type = "Race"
+
                 model_name = config.get("model", {}).get("name", "N/A")
                 dataset_name = config.get("dataset", {}).get("name", "N/A")
                 learning_rate = config.get("training", {}).get("learning_rate", "N/A")
@@ -164,6 +171,7 @@ class ExperimentManager(BaseProcessManager):
                     "epoch_time": epoch_time,
                     "race_id": race_id,
                     "is_baseline_for": is_baseline_for,
+                    "type": exp_type,
                 }
             )
 
@@ -400,6 +408,23 @@ class ExperimentManager(BaseProcessManager):
             json.dump(config.as_plain_ordered_dict(), f, indent=4)
 
         self.launch_experiment(config_path)
+
+    def launch_experiment_from_config(self, config: dict, exp_name: str) -> (bool, str):
+        """
+        Launches an experiment directly from a config dictionary.
+        """
+        if not exp_name:
+            return False, "Experiment name cannot be empty."
+
+        exp_dir = os.path.join(self.RESULTS_DIR, exp_name)
+        if os.path.exists(exp_dir):
+            return False, f"Experiment '{exp_name}' already exists."
+
+        try:
+            self._prepare_and_launch_exp(exp_name, config)
+            return True, f"Successfully launched {exp_name}."
+        except Exception as e:
+            return False, f"Failed to launch {exp_name}: {e}"
 
 
     def get_plottable_metrics(self):

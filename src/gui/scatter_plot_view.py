@@ -8,6 +8,9 @@ from PyQt6.QtWidgets import (
     QMenu,
     QGraphicsLineItem,
 )
+import pandas as pd
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QAction
 
@@ -51,9 +54,9 @@ class ScatterPlotView(QWidget):
 
         self.scatter_plot.sigClicked.connect(self._on_point_clicked)
         self.roi.sigRegionChangeFinished.connect(self._on_roi_changed)
-        self.x_axis_selector.currentTextChanged.connect(self.update_plot)
-        self.y_axis_selector.currentTextChanged.connect(self.update_plot)
-        self.color_selector.currentTextChanged.connect(self.update_plot)
+        self.run_pca_button.clicked.connect(self._run_pca)
+        self.color_selector.currentTextChanged.connect(self.update_plot_styles)
+        self.size_selector.currentTextChanged.connect(self.update_plot_styles)
 
 
     def _on_point_clicked(self, plot, points):
@@ -66,18 +69,18 @@ class ScatterPlotView(QWidget):
 
         # --- Controls ---
         controls_layout = QHBoxLayout()
-        self.x_axis_selector = QComboBox()
-        self.y_axis_selector = QComboBox()
+        self.run_pca_button = QPushButton("Run PCA")
         self.color_selector = QComboBox()
+        self.size_selector = QComboBox()
 
-        controls_layout.addWidget(QLabel("X-Axis:"))
-        controls_layout.addWidget(self.x_axis_selector)
-        controls_layout.addStretch()
-        controls_layout.addWidget(QLabel("Y-Axis:"))
-        controls_layout.addWidget(self.y_axis_selector)
+        controls_layout.addWidget(self.run_pca_button)
         controls_layout.addStretch()
         controls_layout.addWidget(QLabel("Color:"))
         controls_layout.addWidget(self.color_selector)
+        controls_layout.addStretch()
+        controls_layout.addWidget(QLabel("Size:"))
+        controls_layout.addWidget(self.size_selector)
+
 
         # --- Plot ---
         self.plot_widget = CustomPlotWidget(self)
@@ -138,9 +141,8 @@ class ScatterPlotView(QWidget):
 
     def _populate_selectors(self):
         metrics = self.manager.get_plottable_metrics()
-        self.x_axis_selector.addItems(metrics)
-        self.y_axis_selector.addItems(metrics)
         self.color_selector.addItems(metrics)
+        self.size_selector.addItems(metrics)
 
     def _get_metric_value(self, metric_key, exp_data):
         """
@@ -173,56 +175,98 @@ class ScatterPlotView(QWidget):
         except (ValueError, TypeError, KeyError):
             return None
 
-    def update_plot(self):
-        # This can be slow if there are many experiments, so we don't clear the whole plot,
-        # we just update the data of the existing scatter plot item.
-        self.plot_widget.setLabel("bottom", self.x_axis_selector.currentText())
-        self.plot_widget.setLabel("left", self.y_axis_selector.currentText())
-
+    def _run_pca(self):
+        """
+        Runs PCA on the available experiment data and updates the plot.
+        """
         experiments = self.manager.get_experiments_data()
-        self.all_points_data = []
-        color_values = []
+        metrics = self.manager.get_plottable_metrics()
 
-        x_metric = self.x_axis_selector.currentText()
-        y_metric = self.y_axis_selector.currentText()
-        color_metric = self.color_selector.currentText()
-
+        # --- Prepare data for PCA ---
+        pca_data = []
+        valid_experiments = []
         for exp in experiments:
-            x = self._get_metric_value(x_metric, exp)
-            y = self._get_metric_value(y_metric, exp)
-            color_val = self._get_metric_value(color_metric, exp)
+            feature_vector = [self._get_metric_value(m, exp) for m in metrics]
+            if all(v is not None for v in feature_vector):
+                pca_data.append(feature_vector)
+                valid_experiments.append(exp)
 
-            if x is not None and y is not None:
-                self.all_points_data.append({
-                    "pos": (x, y),
-                    "data": exp["name"],
-                    "brush": pg.mkBrush("b"), # Default brush
-                    "pen": None,
-                    "size": 10
-                })
-                if color_val is not None:
-                    color_values.append(color_val)
+        if len(pca_data) < 2:
+            print("Not enough data for PCA.")
+            return
 
-        if self.all_points_data and color_values and len(color_values) == len(self.all_points_data):
-            min_c = min(color_values)
-            max_c = max(color_values)
-            cmap = pg.ColorMap(
-                pos=[min_c, max_c],
-                color=[(0, 0, 255, 255), (255, 0, 0, 255)] # Blue to Red
-            )
+        df = pd.DataFrame(pca_data, columns=metrics)
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(df)
+
+        pca = PCA(n_components=2)
+        principal_components = pca.fit_transform(scaled_data)
+
+        # --- Store data for plotting ---
+        self.all_points_data = []
+        for i, exp in enumerate(valid_experiments):
+            self.all_points_data.append({
+                "pos": (principal_components[i, 0], principal_components[i, 1]),
+                "data": exp["name"],
+                "exp_data": exp, # Store original data
+            })
+
+        self.plot_widget.setLabel("bottom", "Principal Component 1")
+        self.plot_widget.setLabel("left", "Principal Component 2")
+        self.update_plot_styles()
+
+    def update_plot_styles(self):
+        """
+        Updates the color and size of the points on the scatter plot.
+        """
+        if not self.all_points_data:
+            return
+
+        color_metric = self.color_selector.currentText()
+        size_metric = self.size_selector.currentText()
+
+        color_values = [self._get_metric_value(color_metric, p["exp_data"]) for p in self.all_points_data]
+        size_values = [self._get_metric_value(size_metric, p["exp_data"]) for p in self.all_points_data]
+
+        # Filter out None values for robust min/max calculation
+        valid_colors = [v for v in color_values if v is not None]
+        valid_sizes = [v for v in size_values if v is not None]
+
+        # --- Assign brushes based on color metric ---
+        if valid_colors:
+            min_c, max_c = min(valid_colors), max(valid_colors)
+            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 0, 0, 255)])
             for i, p in enumerate(self.all_points_data):
-                p["brush"] = cmap.map(color_values[i], 'qcolor')
+                p["brush"] = cmap.map(color_values[i], 'qcolor') if color_values[i] is not None else pg.mkBrush("b")
+        else:
+            for p in self.all_points_data:
+                p["brush"] = pg.mkBrush("b")
+
+        # --- Assign sizes based on size metric ---
+        if valid_sizes:
+            min_s, max_s = min(valid_sizes), max(valid_sizes)
+            for i, p in enumerate(self.all_points_data):
+                if size_values[i] is not None:
+                    # Normalize size between 5 and 20
+                    p["size"] = 5 + 15 * ((size_values[i] - min_s) / (max_s - min_s + 1e-9))
+                else:
+                    p["size"] = 10
+        else:
+            for p in self.all_points_data:
+                p["size"] = 10
 
         self.scatter_plot.setData(self.all_points_data)
         self._update_selection_highlighting()
 
-        # Remove old race lines and color bar before adding new ones
+        # --- Clear old legends and lines ---
         items_to_remove = [item for item in self.plot_widget.items() if isinstance(item, (QGraphicsLineItem, pg.GradientLegend))]
         for item in items_to_remove:
             self.plot_widget.removeItem(item)
 
-        # Add a color bar
-        if color_values:
+        # --- Add new color bar ---
+        if valid_colors:
+            min_c, max_c = min(valid_colors), max(valid_colors)
+            cmap = pg.ColorMap(pos=[min_c, max_c], color=[(0, 0, 255, 255), (255, 0, 0, 255)])
             grad_legend = pg.GradientLegend((20, 150), (-10, -30))
             grad_legend.setLabels({f"{min_c:.2f}": 0, f"{max_c:.2f}": 1})
             grad_legend.setColorMap(cmap)
@@ -231,8 +275,7 @@ class ScatterPlotView(QWidget):
         # --- Draw lines for races ---
         races = {}
         for i, p in enumerate(self.all_points_data):
-            exp_name = p["data"]
-            exp_data = next((e for e in experiments if e["name"] == exp_name), None)
+            exp_data = p["exp_data"]
             if exp_data and exp_data.get("race_id") and exp_data.get("race_id") != "N/A":
                 race_id = exp_data["race_id"]
                 if race_id not in races:

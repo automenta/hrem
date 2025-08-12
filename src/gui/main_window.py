@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QListWidget,
     QLabel,
     QPushButton,
     QSplitter,
@@ -16,6 +15,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QTextEdit,
     QTabWidget,
+    QTreeView,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -25,14 +25,14 @@ from PyQt6.QtWidgets import (
     QInputDialog,
     QAbstractItemView,
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QItemSelectionModel
+from PyQt6.QtGui import QStandardItemModel, QStandardItem
 
 from .experiment_manager import ExperimentManager
-from .search_manager import SearchManager
 from .archive_dialog import ArchiveManagerDialog
 from .trajectory_view import TrajectoryView
 from .scatter_plot_view import ScatterPlotView
-from .launch_dialog import LaunchExperimentDialog
+from .unified_launch_dialog import UnifiedLaunchDialog
 from .constants import (
     CONFIGS_DIR,
     INITIAL_SPLITTER_SIZES,
@@ -42,19 +42,6 @@ from .constants import (
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
 )
-
-
-class NumericTableWidgetItem(QTableWidgetItem):
-    """
-    A QTableWidgetItem that sorts numerically.
-    """
-    def __lt__(self, other):
-        try:
-            # Attempt to convert text to float for comparison
-            return float(self.text()) < float(other.text())
-        except (ValueError, TypeError):
-            # Fallback to string comparison if conversion fails
-            return super().__lt__(other)
 
 
 class MainGUI(QMainWindow):
@@ -67,7 +54,6 @@ class MainGUI(QMainWindow):
         self.setWindowTitle("Experimentation Platform")
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
         self.manager = ExperimentManager()
-        self.search_manager = SearchManager()
         self.comparison_list = []
         self.current_train_loss = []
         self.current_test_loss = []
@@ -96,7 +82,6 @@ class MainGUI(QMainWindow):
         self._create_experiments_tab()
         self._create_trajectory_tab()
         self._create_analysis_tab()
-        self._create_search_tab()
 
     def _create_management_tab(
         self,
@@ -146,15 +131,12 @@ class MainGUI(QMainWindow):
         Creates the layout and widgets for the 'Experiments' tab.
         """
         # --- Left Panel Widgets ---
-        self.exp_table = QTableWidget()
-        self.exp_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.exp_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.exp_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.exp_table.verticalHeader().setVisible(False)
-        header = self.exp_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        header.setStretchLastSection(True)
-        self.exp_table.setSortingEnabled(True)
+        self.exp_tree = QTreeView()
+        self.exp_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.exp_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.exp_tree.setSortingEnabled(True)
+        self.exp_tree.header().setStretchLastSection(True)
+        self.exp_tree.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
         self.filter_input = QLineEdit()
         self.filter_input.setPlaceholderText("Filter by name...")
@@ -165,7 +147,7 @@ class MainGUI(QMainWindow):
         left_content_layout = QVBoxLayout(left_content_container)
         left_content_layout.setContentsMargins(0, 0, 0, 0)
         left_content_layout.addWidget(self.filter_input)
-        left_content_layout.addWidget(self.exp_table)
+        left_content_layout.addWidget(self.exp_tree)
 
         # --- Buttons ---
         self.refresh_button = QPushButton("Refresh List")
@@ -174,9 +156,6 @@ class MainGUI(QMainWindow):
         self.launch_button.clicked.connect(self.launch_new_experiment)
         self.archive_manager_button = QPushButton("Manage Archives...")
         self.archive_manager_button.clicked.connect(self.open_archive_manager)
-        self.select_parent_button = QPushButton("Select Parent")
-        self.select_parent_button.clicked.connect(self.select_parent_experiment)
-        self.select_parent_button.setEnabled(False)
         self.clone_button = QPushButton("Clone")
         self.clone_button.clicked.connect(self.clone_selected_experiment)
         self.clone_button.setEnabled(False)
@@ -189,10 +168,10 @@ class MainGUI(QMainWindow):
         self.delete_button = QPushButton("Delete")
         self.delete_button.clicked.connect(self.archive_selected_experiments)
         self.delete_button.setEnabled(False)
-        self.compare_all_button = QPushButton("Compare All Visible")
-        self.compare_all_button.clicked.connect(self._compare_all_visible)
+        self.compare_button = QPushButton("Compare Selected")
+        self.compare_button.clicked.connect(self.compare_selected)
         self.clear_comparison_button = QPushButton("Clear Comparison")
-        self.clear_comparison_button.clicked.connect(self._clear_comparison)
+        self.clear_comparison_button.clicked.connect(self.clear_comparison)
         self.clear_comparison_button.setEnabled(False)
 
 
@@ -244,8 +223,7 @@ class MainGUI(QMainWindow):
                 self.stop_button,
                 self.delete_button,
                 self.archive_manager_button,
-                self.select_parent_button,
-                self.compare_all_button,
+                self.compare_button,
                 self.clear_comparison_button,
             ],
             right_panel,
@@ -312,172 +290,161 @@ class MainGUI(QMainWindow):
         self.filter_input.setText(filter_text)
 
 
-    def _create_search_tab(self):
-        """
-        Creates the layout and widgets for the 'Search' tab.
-        """
-        self.search_list_widget = QListWidget()
-
-        self.launch_search_button = QPushButton("Launch New")
-        self.launch_search_button.clicked.connect(self.launch_new_search)
-        self.stop_search_button = QPushButton("Stop")
-        self.stop_search_button.clicked.connect(self.stop_selected_search)
-        self.stop_search_button.setEnabled(False)
-
-        self.search_output_display = QTextEdit()
-        self.search_output_display.setReadOnly(True)
-        self.search_output_display.setFontFamily("monospace")
-
-        self._create_management_tab(
-            "Search",
-            "Hyperparameter Searches",
-            self.search_list_widget,
-            self.on_search_selection_changed,
-            [self.launch_search_button, self.stop_search_button],
-            self.search_output_display,
-        )
-
-    def _get_column_index(self, column_name: str) -> int:
-        """
-        Gets the index of a column by its header name.
-        Returns -1 if the column name is not found.
-        """
-        try:
-            return self.exp_table_headers.index(column_name)
-        except ValueError:
-            print(f"Warning: Column '{column_name}' not found in experiment table.")
-            return -1
-
     def launch_new_experiment(self):
         """
-        Opens a custom dialog to launch a new experiment or a race.
+        Opens a unified dialog to launch a new experiment.
         """
-        dialog = LaunchExperimentDialog(self)
+        # For a new experiment, we might start with a default or empty config
+        default_config = {"model": {}, "dataset": {}, "training": {}}
+        dialog = UnifiedLaunchDialog(config=default_config, parent=self)
         if dialog.exec():
             launch_info = dialog.get_launch_info()
-            self.manager.launch_experiment_race(launch_info)
-            QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
+            if launch_info:
+                success, message = self.manager.launch_experiment_from_config(
+                    launch_info["config"], launch_info["name"]
+                )
+                if success:
+                    QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
+                else:
+                    QMessageBox.warning(self, "Launch Failed", message)
+
+    def clone_selected_experiment(self):
+        """
+        Opens the unified launch dialog to clone the selected experiment.
+        """
+        exp_names = self.get_selected_experiment_names()
+        if len(exp_names) != 1:
+            QMessageBox.warning(self, "Action Failed", "Please select exactly one experiment to clone.")
+            return
+        original_name = exp_names[0]
+
+        original_config, err = self.manager.load_experiment_config(original_name)
+        if err:
+            QMessageBox.warning(self, "Clone Failed", f"Could not load config for {original_name}: {err}")
+            return
+
+        # Suggest a new name for the clone
+        new_name = f"{original_name}_clone"
+        original_config["parent_experiment"] = original_name
+
+        dialog = UnifiedLaunchDialog(config=original_config, exp_name=new_name, parent=self)
+        if dialog.exec():
+            launch_info = dialog.get_launch_info()
+            if launch_info:
+                # The dialog now handles setting the new name in the config
+                success, message = self.manager.launch_experiment_from_config(
+                    launch_info["config"], launch_info["name"]
+                )
+                if success:
+                    QTimer.singleShot(LAUNCH_DELAY_MS, self.refresh_ui)
+                    self.select_experiment_by_name(launch_info["name"])
+                else:
+                    QMessageBox.warning(self, "Launch Failed", message)
 
     def populate_experiment_list(self):
         """
-        Populates the experiment table with detailed information.
+        Populates the experiment tree with hierarchical information.
         """
-        self.exp_table.setSortingEnabled(False)
-
-        # Store current selection and filter to restore them later
+        self.exp_tree.setSortingEnabled(False)
         current_selection = self.get_selected_experiment_name()
-        filter_text = self.filter_input.text()
 
-        self.exp_table.setRowCount(0)
+        graph = self.manager.get_experiment_graph()
+        self.exp_model = QStandardItemModel()
+        self.exp_model.setHorizontalHeaderLabels([
+            "Name", "Type", "Status", "Model", "Dataset", "Final Loss", "Created"
+        ])
+        self.exp_tree.setModel(self.exp_model)
 
-        experiments = self.manager.get_experiments_data()
+        # A map from experiment name to the tree item
+        items = {}
+        for name, data in graph["nodes"].items():
+            # Create the list of column texts for the row
+            row = [
+                data["name"],
+                data.get("type", "Single"),
+                data["status"],
+                data["model"],
+                data["dataset"],
+                data["final_loss"],
+                data["created"],
+            ]
+            # Create a list of QStandardItem objects for the row
+            qt_items = [QStandardItem(str(field)) for field in row]
+            # Store the full data dict in the first item for later retrieval
+            qt_items[0].setData(data, role=Qt.ItemDataRole.UserRole)
+            items[name] = qt_items
 
-        self.exp_table_headers = [
-            "Compare", "Name", "Status", "Model", "Dataset", "LR", "Final Loss",
-            "Params", "Epoch Time (s)", "Parent", "Race ID", "Created"
-        ]
-        self.exp_table.setColumnCount(len(self.exp_table_headers))
-        self.exp_table.setHorizontalHeaderLabels(self.exp_table_headers)
+        # Build the tree structure
+        for parent_name, child_name in graph["edges"]:
+            if parent_name in items and child_name in items:
+                parent_item_row = items[parent_name]
+                child_item_row = items[child_name]
+                # The first item in the row acts as the parent for all other items in its row
+                parent_item_row[0].appendRow(child_item_row)
 
-        # --- Get column indices once ---
-        name_col = self._get_column_index("Name")
-        status_col = self._get_column_index("Status")
-        model_col = self._get_column_index("Model")
-        dataset_col = self._get_column_index("Dataset")
-        lr_col = self._get_column_index("LR")
-        loss_col = self._get_column_index("Final Loss")
-        params_col = self._get_column_index("Params")
-        time_col = self._get_column_index("Epoch Time (s)")
-        parent_col = self._get_column_index("Parent")
-        race_col = self._get_column_index("Race ID")
-        created_col = self._get_column_index("Created")
-        compare_col = self._get_column_index("Compare")
+        # Add only the roots to the model
+        for root_name in graph["roots"]:
+            if root_name in items:
+                self.exp_model.appendRow(items[root_name])
 
+        self.exp_tree.expandAll()
+        self.exp_tree.setSortingEnabled(True)
+        for i in range(self.exp_model.columnCount()):
+            self.exp_tree.resizeColumnToContents(i)
 
-        for row, exp_data in enumerate(experiments):
-            self.exp_table.insertRow(row)
-
-            # --- Checkbox for comparison ---
-            if compare_col != -1:
-                chk_box_widget = QWidget()
-                chk_box_layout = QHBoxLayout(chk_box_widget)
-                chk_box_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                chk_box_layout.setContentsMargins(0,0,0,0)
-                compare_checkbox = QCheckBox()
-                # Use a lambda to pass the experiment name to the handler
-                compare_checkbox.stateChanged.connect(
-                    lambda state, name=exp_data["name"]: self._on_compare_checkbox_changed(state, name)
-                )
-                chk_box_layout.addWidget(compare_checkbox)
-                self.exp_table.setCellWidget(row, compare_col, chk_box_widget)
-
-            # --- Other data ---
-            if name_col != -1: self.exp_table.setItem(row, name_col, QTableWidgetItem(exp_data["name"]))
-            if status_col != -1: self.exp_table.setItem(row, status_col, QTableWidgetItem(exp_data["status"]))
-            if model_col != -1: self.exp_table.setItem(row, model_col, QTableWidgetItem(str(exp_data["model"])))
-            if dataset_col != -1: self.exp_table.setItem(row, dataset_col, QTableWidgetItem(str(exp_data["dataset"])))
-            if lr_col != -1: self.exp_table.setItem(row, lr_col, NumericTableWidgetItem(str(exp_data["lr"])))
-            if loss_col != -1: self.exp_table.setItem(row, loss_col, NumericTableWidgetItem(str(exp_data["final_loss"])))
-            if params_col != -1: self.exp_table.setItem(row, params_col, NumericTableWidgetItem(str(exp_data["params"])))
-            if time_col != -1: self.exp_table.setItem(row, time_col, NumericTableWidgetItem(str(exp_data["epoch_time"])))
-            if parent_col != -1: self.exp_table.setItem(row, parent_col, QTableWidgetItem(exp_data["parent"]))
-            if race_col != -1: self.exp_table.setItem(row, race_col, QTableWidgetItem(exp_data["race_id"]))
-            if created_col != -1: self.exp_table.setItem(row, created_col, QTableWidgetItem(exp_data["created"]))
-
-        self.exp_table.setSortingEnabled(True)
-        self.exp_table.resizeColumnsToContents()
-
-        name_col = self._get_column_index("Name")
-        if name_col != -1:
-            self.exp_table.horizontalHeader().setSectionResizeMode(name_col, QHeaderView.ResizeMode.Stretch)
-
-        # Restore filter and selection
-        self.filter_experiments(filter_text)
         self.select_experiment_by_name(current_selection)
 
 
     def filter_experiments(self, text):
         """
-        Filters the experiment table by name based on the input text.
-        Handles both substring search and exact name matching from analysis tab.
+        Recursively filters the experiment tree by name.
         """
-        name_col = self._get_column_index("Name")
-        if name_col == -1:
-            return
+        def recurse(parent_item):
+            match_found_in_children = False
+            for r in range(parent_item.rowCount()):
+                child_item = parent_item.child(r, 0)
+                # Recurse first to see if any children match
+                child_matches = recurse(child_item)
 
-        # Handle special filter from analysis tab
-        if text.startswith("name:"):
-            filter_names = set(text.replace("name:", "").split(','))
-            for i in range(self.exp_table.rowCount()):
-                name_item = self.exp_table.item(i, name_col)
-                if name_item:
-                    self.exp_table.setRowHidden(i, name_item.text() not in filter_names)
-        else:
-            # Standard substring search
-            for i in range(self.exp_table.rowCount()):
-                name_item = self.exp_table.item(i, name_col)
-                if name_item:
-                    self.exp_table.setRowHidden(i, text.lower() not in name_item.text().lower())
+                # Check if the current item matches
+                item_text = child_item.text().lower()
+                current_item_matches = text.lower() in item_text
+
+                # The row should be visible if the item itself matches, or if any of its children match
+                is_visible = current_item_matches or child_matches
+                self.exp_tree.setRowHidden(r, parent_item.index(), not is_visible)
+
+                if is_visible:
+                    match_found_in_children = True
+            return match_found_in_children
+
+        if hasattr(self, "exp_model"):
+            recurse(self.exp_model.invisibleRootItem())
 
     def get_selected_experiment_names(self):
         """
-        Gets the names of all currently selected experiments in the table.
+        Gets the names of all currently selected experiments in the tree.
         """
         selected_names = []
-        name_col = self._get_column_index("Name")
-        if name_col == -1:
+        if not hasattr(self, "exp_tree"):
             return []
 
-        selected_rows = self.exp_table.selectionModel().selectedRows()
-        for index in selected_rows:
-            name_item = self.exp_table.item(index.row(), name_col)
-            if name_item:
-                selected_names.append(name_item.text())
+        selection_model = self.exp_tree.selectionModel()
+        if not selection_model:
+            return []
+
+        selected_indexes = selection_model.selectedRows(column=0)
+        for index in selected_indexes:
+            item = self.exp_model.itemFromIndex(index)
+            if item:
+                exp_data = item.data(role=Qt.ItemDataRole.UserRole)
+                if exp_data and "name" in exp_data:
+                    selected_names.append(exp_data["name"])
         return selected_names
 
     def get_selected_experiment_name(self):
         """
-        Gets the name of the currently selected experiment in the table.
+        Gets the name of the currently selected experiment in the tree.
         If multiple are selected, returns the first one.
         Returns None if no row is selected.
         """
@@ -486,33 +453,30 @@ class MainGUI(QMainWindow):
 
     def select_experiment_by_name(self, name_to_select: str):
         """
-        Selects the row in the experiment table corresponding to the given name.
+        Selects the item in the experiment tree corresponding to the given name.
         """
-        if not name_to_select:
+        if not name_to_select or not hasattr(self, "exp_model"):
             return
 
-        name_col = self._get_column_index("Name")
-        if name_col == -1:
-            return
+        # QStandardItemModel.findItems is not recursive, so we do it manually
+        def find_item_recursively(parent_item):
+            for r in range(parent_item.rowCount()):
+                item = parent_item.child(r, 0)
+                if item and item.data(role=Qt.ItemDataRole.UserRole)["name"] == name_to_select:
+                    return item
+                # Recurse
+                found_item = find_item_recursively(item)
+                if found_item:
+                    return found_item
+            return None
 
-        for i in range(self.exp_table.rowCount()):
-            name_item = self.exp_table.item(i, name_col)
-            if name_item and name_item.text() == name_to_select:
-                self.exp_table.selectRow(i)
-                break
-
-    def _on_compare_checkbox_changed(self, state, exp_name):
-        """
-        Handles the state change of a compare checkbox.
-        """
-        if state == Qt.CheckState.Checked.value:
-            if exp_name not in self.comparison_list:
-                self.comparison_list.append(exp_name)
-        else:
-            if exp_name in self.comparison_list:
-                self.comparison_list.remove(exp_name)
-
-        self.update_selected_experiment_display()
+        item_to_select = find_item_recursively(self.exp_model.invisibleRootItem())
+        if item_to_select:
+            self.exp_tree.selectionModel().select(
+                item_to_select.index(),
+                QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows,
+            )
+            self.exp_tree.scrollTo(item_to_select.index())
 
     def archive_selected_experiments(self):
         """
@@ -587,98 +551,21 @@ class MainGUI(QMainWindow):
             else:
                 QMessageBox.warning(self, "Error", message)
 
-    def clone_selected_experiment(self):
+    def clear_comparison(self):
         """
-        Clones the currently selected experiment.
-        """
-        exp_names = self.get_selected_experiment_names()
-        if len(exp_names) != 1:
-            QMessageBox.warning(self, "Action Failed", "Please select exactly one experiment to clone.")
-            return
-        exp_name = exp_names[0]
-
-        new_name, ok = QInputDialog.getText(
-            self,
-            "Clone Experiment",
-            f"Enter a name for the clone of '{exp_name}':",
-            QLineEdit.EchoMode.Normal,
-            f"{exp_name}_clone",
-        )
-
-        if ok and new_name:
-            success, message = self.manager.clone_experiment(exp_name, new_name)
-            if success:
-                QMessageBox.information(self, "Success", message)
-                self.refresh_ui()
-                self.select_experiment_by_name(new_name)
-            else:
-                QMessageBox.warning(self, "Error", message)
-
-    def select_parent_experiment(self):
-        """
-        Finds and selects the parent of the currently selected experiment.
-        """
-        exp_names = self.get_selected_experiment_names()
-        if len(exp_names) != 1:
-            return # Silently fail, button should be disabled
-        exp_name = exp_names[0]
-
-        config, _ = self.manager.load_experiment_config(exp_name)
-        parent = config.get("parent_experiment") if config else None
-
-        if parent and parent != "N/A":
-            self.select_experiment_by_name(parent)
-        else:
-            QMessageBox.information(self, "No Parent", "This experiment has no parent.")
-
-    def _clear_comparison(self):
-        """
-        Clears the comparison list and unchecks all associated checkboxes.
+        Clears the comparison list.
         """
         self.comparison_list.clear()
-
-        compare_col = self._get_column_index("Compare")
-        if compare_col == -1:
-            return
-
-        # Block signals to avoid triggering _on_compare_checkbox_changed repeatedly
-        self.exp_table.blockSignals(True)
-        for i in range(self.exp_table.rowCount()):
-            cell_widget = self.exp_table.cellWidget(i, compare_col)
-            if cell_widget:
-                check_box = cell_widget.findChild(QCheckBox)
-                if check_box and check_box.isChecked():
-                    check_box.setChecked(False)
-        self.exp_table.blockSignals(False)
-
         self.update_selected_experiment_display()
 
-    def _compare_all_visible(self):
+    def compare_selected(self):
         """
-        Adds all currently visible experiments to the comparison list.
+        Adds the selected experiments to the comparison list.
         """
-        compare_col = self._get_column_index("Compare")
-        name_col = self._get_column_index("Name")
-        if compare_col == -1 or name_col == -1:
-            return
-
-        # Block signals to avoid triggering _on_compare_checkbox_changed repeatedly
-        self.exp_table.blockSignals(True)
-        for i in range(self.exp_table.rowCount()):
-            if not self.exp_table.isRowHidden(i):
-                name_item = self.exp_table.item(i, name_col)
-                if name_item:
-                    exp_name = name_item.text()
-                    if exp_name not in self.comparison_list:
-                        self.comparison_list.append(exp_name)
-
-                    cell_widget = self.exp_table.cellWidget(i, compare_col)
-                    if cell_widget:
-                        check_box = cell_widget.findChild(QCheckBox)
-                        if check_box and not check_box.isChecked():
-                            check_box.setChecked(True)
-        self.exp_table.blockSignals(False)
-
+        selected_names = self.get_selected_experiment_names()
+        for name in selected_names:
+            if name not in self.comparison_list:
+                self.comparison_list.append(name)
         self.update_selected_experiment_display()
 
 
@@ -688,26 +575,25 @@ class MainGUI(QMainWindow):
         """
         self.populate_experiment_list()
         self.update_selected_experiment_display()
-        self.populate_search_list()
-        self.update_search_display()
         self.trajectory_view.draw_graph()
         self.scatter_plot_view.update_plot()
 
     def update_selected_experiment_display(self):
         """
-        Displays the results of the selected experiment or compares multiple experiments.
+        Displays the results of the selected experiment(s) or search.
         """
         self.plot_widget.clear()
         self.config_display.clear()
+        self.diff_table.clear()
+        self.diff_table.setRowCount(0)
+        self.diff_table.setColumnCount(0)
 
-        # Update button states related to comparison
-        self.clear_comparison_button.setEnabled(len(self.comparison_list) > 0)
-
-        # Update button states based on selection
         selected_names = self.get_selected_experiment_names()
         num_selected = len(selected_names)
         statuses = self.manager.get_experiment_statuses()
 
+        # --- Update button states ---
+        self.clear_comparison_button.setEnabled(len(self.comparison_list) > 0)
         are_any_running = False
         are_all_stopped = True
         if num_selected > 0:
@@ -719,33 +605,69 @@ class MainGUI(QMainWindow):
         self.rename_button.setEnabled(num_selected == 1 and are_all_stopped)
         self.delete_button.setEnabled(num_selected > 0 and are_all_stopped)
         self.stop_button.setEnabled(num_selected > 0 and are_any_running)
+        self.compare_button.setEnabled(num_selected > 0)
 
-        # For single selections, some logic is handled in _display_single_experiment
-        if num_selected != 1:
-            self.select_parent_button.setEnabled(False)
-
+        # --- Main display logic ---
         if self.comparison_list:
             self._display_comparison()
         elif num_selected == 1:
-            self._display_single_experiment()
+            exp_name = selected_names[0]
+            exp_data = self.manager.get_experiment_graph()["nodes"].get(exp_name)
+            if exp_data:
+                if exp_data.get("type") == "Search":
+                    self._display_search_summary(exp_name, exp_data)
+                else:
+                    self._display_single_experiment(exp_name, exp_data)
         else:
             # No selection or multiple selection outside of compare mode
             self.plot_widget.setTitle("No experiment selected")
             self.config_display.clear()
             self.diff_table.setVisible(False)
 
+    def _display_search_summary(self, exp_name, exp_data):
+        """
+        Displays a summary of a hyperparameter search in the diff_table.
+        """
+        self.config_display.setVisible(False)
+        self.plot_widget.setVisible(False)
+        self.diff_table.setVisible(True)
 
-    def _display_single_experiment(self):
+        graph = self.manager.get_experiment_graph()
+        children = [edge[1] for edge in graph["edges"] if edge[0] == exp_name]
+
+        if not children:
+            self.diff_table.setRowCount(1)
+            self.diff_table.setColumnCount(1)
+            self.diff_table.setItem(0, 0, QTableWidgetItem("No trials found for this search."))
+            return
+
+        # --- Gather trial data ---
+        trial_data = []
+        for child_name in children:
+            if child_name in graph["nodes"]:
+                trial_data.append(graph["nodes"][child_name])
+
+        # --- Populate diff table with trial results ---
+        headers = ["Trial Name", "Status", "Final Loss"] # Add more as needed
+        self.diff_table.setColumnCount(len(headers))
+        self.diff_table.setHorizontalHeaderLabels(headers)
+        self.diff_table.setRowCount(len(trial_data))
+
+        for row, trial in enumerate(trial_data):
+            self.diff_table.setItem(row, 0, QTableWidgetItem(trial["name"]))
+            self.diff_table.setItem(row, 1, QTableWidgetItem(trial["status"]))
+            self.diff_table.setItem(row, 2, QTableWidgetItem(str(trial["final_loss"])))
+
+        self.diff_table.resizeColumnsToContents()
+
+
+    def _display_single_experiment(self, exp_name, exp_data):
         """
         Displays the plot and config for a single selected experiment.
         """
         self.diff_table.setVisible(False)
         self.config_display.setVisible(True)
-
-        exp_name = self.get_selected_experiment_name() # Should be guaranteed to be one
-        if not exp_name: # Should not happen if called correctly
-            self.plot_widget.setTitle("No experiment selected")
-            return
+        self.plot_widget.setVisible(True)
 
         self._update_metric_selector([exp_name])
         self.current_train_loss, self.current_test_loss = [], []
@@ -793,14 +715,12 @@ class MainGUI(QMainWindow):
         """
         self.config_display.setVisible(False)
         self.diff_table.setVisible(True)
+        self.plot_widget.setVisible(True)
         self._update_diff_table(self.comparison_list)
         self._update_metric_selector(self.comparison_list)
 
         self.plot_widget.addLegend()
         self.plot_widget.setTitle(f"Comparing {len(self.comparison_list)} experiments")
-
-        # Buttons are handled by update_selected_experiment_display
-        self.compare_all_button.setEnabled(True)
 
         colors = ["b", "r", "g", "c", "m", "y", "w"]
         metric_base_name = self.metric_selector.currentText()
@@ -970,94 +890,3 @@ class MainGUI(QMainWindow):
             print(f"Stop signal sent to {stopped_count} experiments.")
             # Give some time for processes to terminate before refreshing
             QTimer.singleShot(500, self.refresh_ui)
-
-    def launch_new_search(self):
-        """
-        Opens a file dialog to select a config file and launches a search.
-        """
-        config_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Search Config", CONFIGS_DIR, "Config files (*.json *.conf)"
-        )
-        if config_path:
-            self.search_manager.launch_search(config_path)
-            QTimer.singleShot(LAUNCH_DELAY_MS, self.populate_search_list)
-
-    def populate_search_list(self):
-        """
-        Populates the search list with names and statuses.
-        """
-        statuses = self.search_manager.get_search_statuses()
-
-        # In-place update to avoid flicker
-        current_items = {
-            self.search_list_widget.item(i).text().split(" ")[0]: self.search_list_widget.item(i)
-            for i in range(self.search_list_widget.count())
-        }
-
-        if set(current_items.keys()) != set(statuses.keys()):
-            current_selection = (
-                self.search_list_widget.currentItem().text().split(" ")[0]
-                if self.search_list_widget.currentItem()
-                else None
-            )
-            self.search_list_widget.clear()
-            for name in sorted(statuses.keys()):
-                status = statuses[name]
-                item_text = f"{name} ({status})"
-                self.search_list_widget.addItem(item_text)
-                if name == current_selection:
-                    self.search_list_widget.setCurrentRow(self.search_list_widget.count() - 1)
-        else:
-            for name, item in current_items.items():
-                status = statuses[name]
-                item_text = f"{name} ({status})"
-                if item.text() != item_text:
-                    item.setText(item_text)
-
-    def update_search_display(self):
-        """
-        Displays the output of the selected search.
-        """
-        current_item = self.search_list_widget.currentItem()
-
-        if not current_item:
-            self.stop_search_button.setEnabled(False)
-            return
-
-        search_name = current_item.text().split(" ")[0]
-
-        # Append any new output from the search process
-        new_output = self.search_manager.get_search_output(search_name)
-        if new_output:
-            self.search_output_display.moveCursor(
-                self.search_output_display.textCursor().End
-            )
-            self.search_output_display.insertPlainText(new_output)
-
-        statuses = self.search_manager.get_search_statuses()
-        is_running = statuses.get(search_name) == STATUS_RUNNING
-        self.stop_search_button.setEnabled(is_running)
-
-    def on_search_selection_changed(self):
-        """
-        Clears the search output display when the selection changes.
-        """
-        self.search_output_display.clear()
-        self.update_search_display()
-
-    def stop_selected_search(self):
-        """
-        Stops the currently selected search if it is running.
-        """
-        current_item = self.search_list_widget.currentItem()
-        if not current_item:
-            return
-
-        search_name = current_item.text().split(" ")[0]
-        if self.search_manager.stop_search(search_name):
-            print(f"Stop signal sent to search: {search_name}")
-            self.populate_search_list()
-        else:
-            QMessageBox.warning(
-                self, "Error", f"Could not stop {search_name}. It may not be running."
-            )

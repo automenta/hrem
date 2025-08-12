@@ -30,8 +30,7 @@ def temp_experiment_dirs(tmp_path):
         json.dump(config_data, f)
 
     with patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir)), \
-         patch("src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)), \
-         patch("src.gui.launch_dialog.CONFIGS_DIR", str(tmp_path / "configs")):
+         patch("src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)):
         yield str(results_dir)
 
 def test_clone_experiment_tracks_parent(temp_experiment_dirs):
