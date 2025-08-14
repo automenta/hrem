@@ -34,9 +34,8 @@ from PyQt6.QtCore import (
     QItemSelectionModel,
     QSettings,
     QUrl,
-    QDesktopServices,
 )
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QDesktopServices
 
 from .experiment_manager import ExperimentManager
 from .archive_dialog import ArchiveManagerDialog
