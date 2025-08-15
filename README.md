@@ -85,7 +85,14 @@ The GUI is organized into several tabs:
 - **Analysis**: A powerful scatter plot for visualizing the entire experiment space. Plot any hyperparameter or result against another, and use a third metric for color-coding. This view also visually connects experiments that were run as part of a "race", making it easy to see performance gaps.
 - **Search**: Manage and monitor `Optuna` hyperparameter searches.
 
-A key workflow is **Paired Experiment Racing**:
+A key workflow is the **Paired Experiment Race**. This paradigm is a powerful, universal method for rigorous algorithm evaluation. Instead of comparing a new model to a generic, pre-existing baseline, a "race" puts a "challenger" model head-to-head against one or more baseline architectures on a specific task. The framework ensures a fair comparison by using the *exact same* training and dataset parameters for all participants, isolating the architectural differences.
+
+This approach is not just about winning; it's about learning. By racing algorithms against each other under controlled conditions, you can:
+- **Prove Universality:** Demonstrate that a novel architecture is not only effective on a specific problem but universally better across a range of tasks.
+- **Discover True Requirements:** Systematically vary the difficulty of the task or the constraints on the models (e.g., parameter count, training time) to understand the true computational and architectural requirements for solving a problem.
+- **Drive Insight:** Over many evaluations, you can build a deep understanding of the trade-offs between model complexity, efficiency, and performance, leading to more informed and targeted research.
+
+To launch a race:
 1.  Click "Launch New".
 2.  In the dialog, select your primary "challenger" configuration file.
 3.  Give the race a base name.

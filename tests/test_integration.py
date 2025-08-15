@@ -140,10 +140,9 @@ def test_experiment_manager_failures(mock_popen, temp_integration_env):
     # --- 1. Launch with invalid config (missing required keys) ---
     invalid_config = {"model": {"name": "test_model"}}
     success, msg = manager.launch_experiment_from_config(invalid_config, "invalid_exp")
-    # This should ideally fail, but the current implementation doesn't validate configs before launch.
-    # This is a potential area for improvement in the application code.
-    # For now, we'll assert that it "succeeds" in creating the files.
-    assert success
+    # This should ideally fail, and the current implementation correctly does.
+    # We assert that the launch fails as expected.
+    assert not success
 
     # --- 2. Rename to existing name ---
     with open(temp_integration_env["single_run_config_path"], "r") as f:
