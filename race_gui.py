@@ -1,6 +1,14 @@
 import sys
 import os
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QMessageBox
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+    QPushButton,
+    QMessageBox,
+    QHBoxLayout,
+)
 from src.gui.challenge_view import ChallengeView
 from src.gui.unified_launch_dialog import UnifiedLaunchDialog
 from src.gui.experiment_manager import ExperimentManager
@@ -23,9 +31,21 @@ class RaceGUI(QMainWindow):
         self.setCentralWidget(main_widget)
         layout = QVBoxLayout(main_widget)
 
+        # --- Top Button Panel ---
+        button_panel = QWidget()
+        button_layout = QHBoxLayout(button_panel)
+        button_layout.setContentsMargins(0, 0, 0, 0) # Remove padding
+
         self.launch_button = QPushButton("Launch New Challenge...")
         self.launch_button.clicked.connect(self.launch_new_challenge)
-        layout.addWidget(self.launch_button)
+        button_layout.addWidget(self.launch_button)
+
+        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button.clicked.connect(self.refresh_view)
+        button_layout.addWidget(self.refresh_button)
+
+        button_layout.addStretch() # Pushes buttons to the left
+        layout.addWidget(button_panel)
 
         self.challenge_view = ChallengeView(self.manager)
         layout.addWidget(self.challenge_view)
@@ -38,6 +58,10 @@ class RaceGUI(QMainWindow):
         os.makedirs(self.manager.RESULTS_DIR, exist_ok=True)
         self.observer.schedule(self.watcher, self.manager.RESULTS_DIR, recursive=True)
         self.observer.start()
+
+    def refresh_view(self):
+        """Manually trigger a refresh of the challenge view."""
+        self.challenge_view.refresh()
 
     def launch_new_challenge(self):
         dialog = UnifiedLaunchDialog(parent=self)

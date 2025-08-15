@@ -1,4 +1,5 @@
 from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QWidget,
     QHBoxLayout,
@@ -9,6 +10,7 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QMessageBox,
 )
 import pyqtgraph as pg
 from collections import defaultdict
@@ -39,6 +41,8 @@ class ChallengeView(QWidget):
         left_layout = QVBoxLayout(left_panel)
         left_layout.addWidget(QLabel("Active Challenges"))
         self.race_list = QListWidget()
+        self.race_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.race_list.customContextMenuRequested.connect(self._show_context_menu)
         self.race_list.itemDoubleClicked.connect(self._on_item_double_clicked)
         left_layout.addWidget(self.race_list)
         splitter.addWidget(left_panel)
@@ -134,14 +138,22 @@ class ChallengeView(QWidget):
 
         self.plot_widget.setTitle(f"Challenge: {race_id}")
         self.plot_widget.addLegend()
+        self.plot_widget.setLabel("left", "Test Loss")
+        self.plot_widget.setLabel("bottom", "Step")
+
 
         # --- Plotting ---
         colors = ["b", "r", "g", "c", "m", "y", "w"]
         for i, participant in enumerate(all_participants):
             if not participant:
                 continue
-            results, _ = self.manager.load_experiment_results(participant["name"])
-            if results and "test_loss" in results:
+
+            results, error = self.manager.load_experiment_results(participant["name"])
+            if error:
+                print(f"Error loading results for {participant['name']}: {error}")
+                continue # Skip this participant if results are corrupted or unreadable
+
+            if results and "test_loss" in results and results["test_loss"]:
                 color = colors[i % len(colors)]
                 pen = pg.mkPen(color, width=2)
                 self.plot_widget.plot(
@@ -166,3 +178,41 @@ class ChallengeView(QWidget):
             self.results_table.setItem(row, 4, QTableWidgetItem(str(p["params"])))
 
         self.results_table.resizeColumnsToContents()
+
+    def _show_context_menu(self, pos):
+        """
+        Shows a context menu for the race list.
+        """
+        item = self.race_list.itemAt(pos)
+        if not item:
+            return
+
+        race_id = item.text()
+        menu = self.race_list.createStandardContextMenu()
+        menu.addSeparator()
+
+        delete_action = QAction("Delete Race Permanently", self)
+        delete_action.triggered.connect(lambda: self._delete_race(race_id))
+        menu.addAction(delete_action)
+
+        menu.exec(self.race_list.mapToGlobal(pos))
+
+    def _delete_race(self, race_id):
+        """
+        Handles the logic for deleting a race after confirmation.
+        """
+        reply = QMessageBox.warning(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to permanently delete the race '{race_id}' and all its associated experiments?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            success, message = self.manager.delete_race(race_id)
+            if success:
+                QMessageBox.information(self, "Success", message)
+            else:
+                QMessageBox.critical(self, "Error", message)
+            self.refresh()

@@ -271,6 +271,46 @@ class ExperimentManager(BaseProcessManager):
         except Exception as e:
             return False, f"Error deleting experiment: {e}"
 
+    def delete_race(self, race_id: str) -> (bool, str):
+        """
+        Permanently deletes all experiments associated with a given race_id.
+        """
+        if not race_id:
+            return False, "Error: race_id cannot be empty."
+
+        experiments_to_delete = []
+        all_experiments = self.get_experiments_data()
+        for exp in all_experiments:
+            if exp.get("race_id") == race_id:
+                experiments_to_delete.append(exp)
+
+        if not experiments_to_delete:
+            return False, f"No experiments found for race_id: {race_id}"
+
+        # Check for running experiments before deleting
+        for exp in experiments_to_delete:
+            if exp["status"] == STATUS_RUNNING:
+                return (
+                    False,
+                    f"Cannot delete race: Experiment '{exp['name']}' is still running.",
+                )
+
+        # Proceed with deletion
+        deleted_count = 0
+        for exp in experiments_to_delete:
+            exp_path = os.path.join(self.RESULTS_DIR, exp["name"])
+            if os.path.exists(exp_path):
+                try:
+                    shutil.rmtree(exp_path)
+                    deleted_count += 1
+                except Exception as e:
+                    return (
+                        False,
+                        f"Error deleting experiment '{exp['name']}': {e}",
+                    )
+
+        return True, f"Successfully deleted {deleted_count} experiments for race '{race_id}'."
+
     def rename_experiment(self, old_name: str, new_name: str) -> (bool, str):
         """
         Renames an experiment's directory.
