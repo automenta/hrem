@@ -1,5 +1,5 @@
-from PyQt6.QtCore import pyqtSignal, Qt, QObject, QThread, QTimer
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import pyqtSignal, Qt, QObject, QThread, QTimer, QDateTime
+from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtWidgets import (
     QWidget,
     QHBoxLayout,
@@ -13,9 +13,12 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QTabWidget,
     QTextEdit,
+    QFrame,
 )
 import pyqtgraph as pg
 from collections import defaultdict
+import random
+from PyQt6.QtCore import QDateTime
 
 
 class RaceDataWorker(QObject):
@@ -54,6 +57,157 @@ class RaceDataWorker(QObject):
             "loaded_data": loaded_data
         }
         self.data_loaded.emit(output)
+
+
+class RaceAnimationManager(QObject):
+    """
+    Manages the plotting and animation of race data.
+    """
+    sigPlotClicked = pyqtSignal(str)
+
+    def __init__(self, plot_widget):
+        super().__init__()
+        self.plot_widget = plot_widget
+        self.participants = {}  # name -> { "curve": pg.PlotDataItem, "data": [], "pen": QPen }
+        self.leader_pen = pg.mkPen(width=4)
+        self.normal_pen_width = 2
+
+    def reset(self):
+        """Clears the plot and resets all participant data."""
+        self.plot_widget.clear()
+        self.participants = {}
+        self.plot_widget.addLegend()
+        self.plot_widget.setLabel("left", "Test Loss")
+        self.plot_widget.setLabel("bottom", "Step")
+
+    def update_data(self, loaded_data):
+        """
+        Updates the plot with new data, creating or extending lines as needed.
+        Returns the current leader's info.
+        """
+        leader_info = {"name": "N/A", "loss": float('inf'), "step": 0}
+
+        # First, add any new participants
+        for i, item in enumerate(loaded_data):
+            p_name = item["participant"]["name"]
+            if p_name not in self.participants:
+                hue = i / max(1, len(loaded_data))
+                color = pg.mkColor(hue=hue, sat=200, val=255)
+                pen = pg.mkPen(color, width=self.normal_pen_width)
+                curve = self.plot_widget.plot(pen=pen, name=p_name)
+                curve.sigClicked.connect(lambda c=curve: self._on_curve_clicked(c))
+                self.participants[p_name] = {"curve": curve, "data": [], "pen": pen}
+
+        # Now, update all data and find the leader
+        for item in loaded_data:
+            p_name = item["participant"]["name"]
+            results = item.get("results", {})
+            test_loss_data = results.get("test_loss", [])
+
+            if not test_loss_data:
+                continue
+
+            # Update curve data
+            self.participants[p_name]["curve"].setData(test_loss_data)
+            self.participants[p_name]["data"] = test_loss_data
+
+            # Check for leader
+            current_loss = test_loss_data[-1]
+            if current_loss < leader_info["loss"]:
+                leader_info = {
+                    "name": p_name,
+                    "loss": current_loss,
+                    "step": len(test_loss_data)
+                }
+
+        # Highlight the leader
+        self._highlight_leader(leader_info["name"])
+        return leader_info
+
+    def _highlight_leader(self, leader_name):
+        """Makes the leader's line thicker and others normal."""
+        for name, p_info in self.participants.items():
+            original_color = p_info["pen"].color()
+            if name == leader_name:
+                new_pen = pg.mkPen(original_color, width=4)
+                p_info["curve"].setPen(new_pen)
+                # Bring leader to front
+                p_info["curve"].setZValue(1)
+            else:
+                new_pen = pg.mkPen(original_color, width=self.normal_pen_width)
+                p_info["curve"].setPen(new_pen)
+                p_info["curve"].setZValue(0)
+
+    def _on_curve_clicked(self, curve):
+        """When a curve is clicked, find its name and emit a signal."""
+        for name, p_info in self.participants.items():
+            if p_info["curve"] == curve:
+                self.sigPlotClicked.emit(name)
+                return
+
+
+class RaceControlPanel(QWidget):
+    """
+    A widget for displaying race commentary and leader status.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_ui()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # --- Title ---
+        title_font = QFont()
+        title_font.setPointSize(14)
+        title_font.setBold(True)
+        self.title_label = QLabel("Race Commentary")
+        self.title_label.setFont(title_font)
+        layout.addWidget(self.title_label)
+
+        # --- Leader Status ---
+        self.leader_frame = QFrame()
+        self.leader_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        leader_layout = QVBoxLayout(self.leader_frame)
+
+        leader_title_font = QFont()
+        leader_title_font.setBold(True)
+        leader_title_font.setPointSize(11)
+        leader_label = QLabel("Current Leader")
+        leader_label.setFont(leader_title_font)
+        leader_layout.addWidget(leader_label)
+
+        self.leader_name_label = QLabel("N/A")
+        self.leader_stats_label = QLabel("Loss: N/A | Step: N/A")
+        leader_layout.addWidget(self.leader_name_label)
+        leader_layout.addWidget(self.leader_stats_label)
+        layout.addWidget(self.leader_frame)
+
+
+        # --- Commentary Box ---
+        self.commentary_box = QTextEdit()
+        self.commentary_box.setReadOnly(True)
+        commentary_font = QFont("Courier New", 10)
+        self.commentary_box.setFont(commentary_font)
+        layout.addWidget(self.commentary_box)
+
+        layout.setStretchFactor(self.commentary_box, 1) # Make box expand
+
+    def reset_panel(self, race_id):
+        self.title_label.setText(f"Race Commentary: {race_id}")
+        self.leader_name_label.setText("N/A")
+        self.leader_stats_label.setText("Loss: N/A | Step: N/A")
+        self.commentary_box.clear()
+        self.add_commentary("🏁 And they're off! The race has begun.")
+
+    def update_leader(self, name, loss, step):
+        self.leader_name_label.setText(name)
+        self.leader_stats_label.setText(f"Loss: {loss:.4f} | Step: {step}")
+
+    def add_commentary(self, text):
+        timestamp = QDateTime.currentDateTime().toString("hh:mm:ss")
+        self.commentary_box.append(f"[{timestamp}] {text}")
 
 
 class ChallengeView(QWidget):
@@ -103,13 +257,13 @@ class ChallengeView(QWidget):
         plot_summary_widget = QWidget()
         plot_summary_layout = QVBoxLayout(plot_summary_widget)
         self.plot_widget = pg.PlotWidget()
-        self.results_table = QTableWidget()
-        self.results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.results_table.verticalHeader().setVisible(False)
-        self.results_table.itemSelectionChanged.connect(self._on_experiment_selected)
-        plot_summary_layout.addWidget(self.plot_widget)
-        plot_summary_layout.addWidget(self.results_table)
-        self.right_tabs.addTab(plot_summary_widget, "Plot & Summary")
+        self.animation_manager = RaceAnimationManager(self.plot_widget) # NEW
+        self.animation_manager.sigPlotClicked.connect(self.load_config_and_logs) # NEW
+        self.race_control_panel = RaceControlPanel() # NEW
+        plot_summary_layout.addWidget(self.plot_widget, stretch=3) # Give more space to plot
+        plot_summary_layout.addWidget(self.race_control_panel, stretch=1)
+        self.right_tabs.addTab(plot_summary_widget, "Race View")
+
 
         # -- Config Tab --
         self.config_view = QTextEdit()
@@ -129,21 +283,23 @@ class ChallengeView(QWidget):
         """
         When an experiment is selected in the table, load its config and logs.
         """
+        # This method is now disconnected, but we'll keep it for the config/log tabs
+        # We need a new way to select an experiment, maybe clicking the plot line
+        # For now, this is not connected to anything.
+        # A future implementation could involve clicking on a plot line.
         self.config_view.clear()
         self.log_view.clear()
 
-        selected_items = self.results_table.selectedItems()
-        if not selected_items:
-            return
+        # The following code is placeholder and not currently active
+        # as there is no table to select from.
+        # selected_items = self.results_table.selectedItems()
+        # if not selected_items:
+        #     return
+        # exp_name = selected_items[0].text() # Assuming name is the first item
+        # self.load_config_and_logs(exp_name)
+        pass
 
-        # The name is in the first column of the selected row
-        selected_row = selected_items[0].row()
-        exp_name_item = self.results_table.item(selected_row, 0)
-        if not exp_name_item:
-            return
-
-        exp_name = exp_name_item.text()
-
+    def load_config_and_logs(self, exp_name):
         # Load and display config
         config, err = self.manager.load_experiment_config(exp_name)
         if err:
@@ -161,6 +317,10 @@ class ChallengeView(QWidget):
             self.log_view.setText(log_content)
         else:
             self.log_view.setText(f"No output.log file found for {exp_name}.")
+
+        # Switch to the config tab for immediate feedback
+        self.right_tabs.setCurrentWidget(self.config_view)
+
 
     def _on_item_double_clicked(self, item):
         """When a race is double-clicked, we can select the challenger in the main experiments tab."""
@@ -216,9 +376,7 @@ class ChallengeView(QWidget):
         Clears the view and starts a background worker to load details for the selected race.
         """
         # Clear existing views
-        self.plot_widget.clear()
-        self.results_table.setRowCount(0)
-        self.results_table.setColumnCount(0)
+        self.animation_manager.reset()
         self.config_view.clear()
         self.log_view.clear()
         self.plot_widget.setTitle("Loading...")
@@ -234,6 +392,7 @@ class ChallengeView(QWidget):
             return
 
         race_id = current_item.text()
+        self.race_control_panel.reset_panel(race_id) # Reset commentary
         race_data = self.races.get(race_id)
         if not race_data:
             self.plot_widget.setTitle("Error: Race data not found.")
@@ -264,52 +423,36 @@ class ChallengeView(QWidget):
         if not current_item or current_item.text() != race_id:
             return # A different race has been selected since we started loading
 
-        self.plot_widget.clear()
         self.plot_widget.setTitle(f"Challenge: {race_id}")
-        self.plot_widget.addLegend()
-        self.plot_widget.setLabel("left", "Test Loss")
-        self.plot_widget.setLabel("bottom", "Step")
 
-        all_participants = [item['participant'] for item in loaded_data]
+        # --- Animation and Leader Tracking ---
+        # This is now handled by the animation manager
+        leader_info = self.animation_manager.update_data(loaded_data)
 
-        # --- Plotting ---
-        for i, item in enumerate(loaded_data):
-            participant = item["participant"]
-            results = item["results"]
-            error = item["error"]
+        # --- Update Control Panel ---
+        if leader_info["name"] != "N/A":
+            last_leader = getattr(self, "_last_leader", None)
+            if leader_info["name"] != last_leader:
+                self.race_control_panel.add_commentary(f"🏆 {leader_info['name']} has taken the lead!")
+                self._last_leader = leader_info["name"]
 
-            if error:
-                print(f"Error loading results for {participant['name']}: {error}")
-                continue
+            self.race_control_panel.update_leader(
+                leader_info["name"], leader_info["loss"], leader_info["step"]
+            )
+            # Add some dynamic commentary
+            if random.random() < 0.15: # 15% chance to add a comment
+                comment = random.choice([
+                    f"Looking strong, {leader_info['name']}!",
+                    f"Incredible performance by {leader_info['name']}.",
+                    f"{leader_info['name']} is widening the gap!",
+                    f"What a run from {leader_info['name']}!",
+                ])
+                self.race_control_panel.add_commentary(comment)
 
-            test_loss_data = results.get("test_loss") if results else None
-            if not isinstance(test_loss_data, list) or not test_loss_data:
-                continue
-
-            hue = i / max(1, len(all_participants))
-            color = pg.mkColor(hue=hue, sat=200, val=255)
-            pen = pg.mkPen(color, width=2)
-            self.plot_widget.plot(test_loss_data, pen=pen, name=participant["name"])
-
-        # --- Table ---
-        headers = ["Experiment", "Model", "Status", "Final Loss", "Params"]
-        self.results_table.setColumnCount(len(headers))
-        self.results_table.setHorizontalHeaderLabels(headers)
-        self.results_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-        self.results_table.setRowCount(len(all_participants))
-
-        for row, p in enumerate(all_participants):
-            if not p:
-                continue
-            self.results_table.setItem(row, 0, QTableWidgetItem(p["name"]))
-            self.results_table.setItem(row, 1, QTableWidgetItem(p["model"]))
-            self.results_table.setItem(row, 2, QTableWidgetItem(p["status"]))
-            self.results_table.setItem(row, 3, QTableWidgetItem(str(p["final_loss"])))
-            self.results_table.setItem(row, 4, QTableWidgetItem(str(p["params"])))
-
-        self.results_table.resizeColumnsToContents()
+        # --- Error Reporting ---
+        for item in loaded_data:
+            if item["error"]:
+                self.race_control_panel.add_commentary(f"⚠️ Error for {item['participant']['name']}: {item['error']}")
 
     def _check_and_refresh_running(self):
         """
@@ -335,7 +478,6 @@ class ChallengeView(QWidget):
             # To avoid refreshing while another load is in progress
             if not self.data_thread or not self.data_thread.isRunning():
                 self.display_race_details()
-
 
     def _show_context_menu(self, pos):
         """
