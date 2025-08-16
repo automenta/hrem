@@ -38,7 +38,6 @@ from .experiment_archive_dialog import ExperimentArchiveDialog
 from .trajectory_view import TrajectoryView
 from .scatter_plot_view import ScatterPlotView
 from .unified_launch_dialog import UnifiedLaunchDialog
-from .challenge_view import ChallengeView
 from .log_deck import LogDeckWindow
 from .file_watcher import ResultsPathWatcher
 from watchdog.observers import Observer
@@ -145,7 +144,7 @@ class MainGUI(QMainWindow):
         self._create_experiments_tab()
         self._create_trajectory_tab()
         self._create_analysis_tab()
-        self._create_challenges_tab()
+        # self._create_challenges_tab() # This is now removed
 
     def _create_management_tab(
         self,
@@ -218,9 +217,9 @@ class MainGUI(QMainWindow):
         left_content_layout.addWidget(self.exp_tree)
 
         # --- Buttons ---
-        self.launch_button = QPushButton("Launch New...")
+        self.launch_button = QPushButton("Launch New Run...")
         self.launch_button.setToolTip("Launch a new experiment, challenge, or search.")
-        self.launch_button.clicked.connect(self.launch_new_experiment)
+        self.launch_button.clicked.connect(self.launch_new_run)
         self.archive_manager_button = QPushButton("Manage Archives...")
         self.archive_manager_button.clicked.connect(self.open_archive_manager)
         self.compare_button = QPushButton("Compare Selected")
@@ -337,7 +336,7 @@ class MainGUI(QMainWindow):
         menu.addSeparator()
 
         edit_action = QAction("Edit & Re-launch...", self)
-        edit_action.triggered.connect(self.edit_selected_experiment)
+        edit_action.triggered.connect(self.relaunch_selected_experiment)
         edit_action.setEnabled(num_selected == 1 and are_all_stopped)
         menu.addAction(edit_action)
 
@@ -381,11 +380,6 @@ class MainGUI(QMainWindow):
         )
         layout.addWidget(self.scatter_plot_view)
 
-    def _create_challenges_tab(self):
-        self.challenge_view = ChallengeView(self.manager)
-        self.tabs.addTab(self.challenge_view, "Challenges")
-        self.challenge_view.experiment_selected.connect(self.select_experiment_by_name)
-
     def _filter_experiments_from_analysis(self, names: list):
         if not names:
             return
@@ -428,13 +422,13 @@ class MainGUI(QMainWindow):
         else:
             QMessageBox.warning(self, "Launch Failed", message)
 
-    def launch_new_experiment(self):
-        default_config = {"model": {}, "dataset": {}, "training": {}}
-        dialog = UnifiedLaunchDialog(config=default_config, parent=self)
+    def launch_new_run(self, config=None, exp_name=None):
+        """Launches the unified dialog for any type of run."""
+        dialog = UnifiedLaunchDialog(config=config, exp_name=exp_name, parent=self)
         if dialog.exec():
             self._launch_from_info(dialog.get_launch_info())
 
-    def edit_selected_experiment(self):
+    def relaunch_selected_experiment(self):
         exp_names = self.get_selected_experiment_names()
         if len(exp_names) != 1:
             return
@@ -467,12 +461,7 @@ class MainGUI(QMainWindow):
             return
 
         original_config["parent_experiment"] = original_name
-
-        dialog = UnifiedLaunchDialog(
-            config=original_config, exp_name=new_name, parent=self
-        )
-        if dialog.exec():
-            self._launch_from_info(dialog.get_launch_info())
+        self.launch_new_run(config=original_config, exp_name=new_name)
 
     def populate_experiment_list(self):
         self.exp_tree.setSortingEnabled(False)
@@ -673,8 +662,8 @@ class MainGUI(QMainWindow):
         self.update_selected_experiment_display()
         self.trajectory_view.draw_graph()
         self.scatter_plot_view.update_plot()
-        if hasattr(self, "challenge_view"):
-            self.challenge_view.refresh()
+        # if hasattr(self, "challenge_view"):
+        #     self.challenge_view.refresh()
 
     def update_selected_experiment_display(self):
         self.plot_widget.clear()

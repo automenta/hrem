@@ -21,8 +21,12 @@ class ConfigEditor(QWidget):
 
     config_changed = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, visible_sections=None):
         super().__init__(parent)
+        if visible_sections is None:
+            self.visible_sections = ["model", "dataset", "training"]
+        else:
+            self.visible_sections = visible_sections
         self._init_ui()
         self._populate_dropdowns()
         self.model_combo.currentTextChanged.connect(self._on_model_changed)
@@ -33,36 +37,40 @@ class ConfigEditor(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
 
         # --- Model Selection ---
-        model_group = QGroupBox("Model")
-        model_group_layout = QVBoxLayout(model_group)
+        self.model_group = QGroupBox("Model")
+        model_group_layout = QVBoxLayout(self.model_group)
         model_form_layout = QFormLayout()
         self.model_combo = QComboBox()
         model_form_layout.addRow(QLabel("Name:"), self.model_combo)
         model_group_layout.addLayout(model_form_layout)
         self.model_params_layout = QFormLayout()
         model_group_layout.addLayout(self.model_params_layout)
-        main_layout.addWidget(model_group)
+        main_layout.addWidget(self.model_group)
 
         # --- Dataset Selection ---
-        dataset_group = QGroupBox("Dataset")
-        dataset_group_layout = QVBoxLayout(dataset_group)
+        self.dataset_group = QGroupBox("Dataset")
+        dataset_group_layout = QVBoxLayout(self.dataset_group)
         dataset_form_layout = QFormLayout()
         self.dataset_combo = QComboBox()
         dataset_form_layout.addRow(QLabel("Name:"), self.dataset_combo)
         dataset_group_layout.addLayout(dataset_form_layout)
         self.dataset_params_layout = QFormLayout()
         dataset_group_layout.addLayout(self.dataset_params_layout)
-        main_layout.addWidget(dataset_group)
+        main_layout.addWidget(self.dataset_group)
 
         # --- Training Parameters ---
-        training_group = QGroupBox("Training")
-        self.training_params_layout = QFormLayout(training_group)
+        self.training_group = QGroupBox("Training")
+        self.training_params_layout = QFormLayout(self.training_group)
         self.training_params_layout.addRow("Epochs:", QLineEdit("20"))
         self.training_params_layout.addRow("Batch Size:", QLineEdit("32"))
         self.training_params_layout.addRow("Learning Rate:", QLineEdit("0.001"))
-        main_layout.addWidget(training_group)
+        main_layout.addWidget(self.training_group)
 
         main_layout.addStretch()
+
+        self.model_group.setVisible("model" in self.visible_sections)
+        self.dataset_group.setVisible("dataset" in self.visible_sections)
+        self.training_group.setVisible("training" in self.visible_sections)
 
     def _populate_dropdowns(self):
         self.model_combo.addItems(sorted(MODEL_REGISTRY.keys()))

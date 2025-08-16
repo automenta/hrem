@@ -18,6 +18,11 @@ def temp_experiment_dirs(tmp_path):
     with open(base_models_dir / "lstm.json", "w") as f:
         json.dump({"name": "lstm", "params": {"hidden_size": 10}}, f)
 
+    base_datasets_dir = tmp_path / "configs" / "base" / "datasets"
+    base_datasets_dir.mkdir(parents=True)
+    with open(base_datasets_dir / "test_dataset.json", "w") as f:
+        json.dump({"name": "test_dataset", "params": {"path": "/foo/bar"}}, f)
+
     # Create a dummy experiment
     exp1_dir = results_dir / "exp1"
     exp1_dir.mkdir()
@@ -32,6 +37,8 @@ def temp_experiment_dirs(tmp_path):
 
     with patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir)), patch(
         "src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)
+    ), patch(
+        "src.gui.experiment_manager.BASE_DATASETS_DIR", str(base_datasets_dir)
     ):
         yield str(results_dir)
 
@@ -86,6 +93,7 @@ def test_launch_experiment_race(mock_launch, temp_experiment_dirs):
         "challenger_config": challenger_config_path,
         "base_name": "my_race",
         "baselines": ["lstm"],
+        "dataset": "test_dataset",
     }
 
     success, msg = manager.launch_experiment_race(launch_info)
