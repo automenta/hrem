@@ -8,6 +8,7 @@ from pyhocon import ConfigFactory, ConfigTree
 
 from .constants import (
     ARCHIVE_DIR,
+    BASE_DATASETS_DIR,
     BASE_MODELS_DIR,
     RESULTS_DIR,
     STATUS_COMPLETED,
@@ -476,33 +477,55 @@ class ExperimentManager(BaseProcessManager):
 
     def launch_experiment_race(self, launch_info: dict):
         """
-        Launches a "race" of experiments: a challenger against multiple baselines.
+        Launches a "race" of experiments: a challenger against multiple baselines
+        on a specified task, with optional training overrides.
         """
         race_id = str(uuid.uuid4())[:8]
         base_name = launch_info["base_name"]
         challenger_config_path = launch_info["challenger_config"]
         baseline_models = launch_info["baselines"]
+        dataset_name = launch_info["dataset"]
+        training_overrides = launch_info.get("training_overrides")
         notes = launch_info.get("notes")
 
-        # 1. Load challenger config
+        # 1. Load common dataset config
+        try:
+            dataset_config_path = os.path.join(
+                BASE_DATASETS_DIR, f"{dataset_name}.json"
+            )
+            dataset_config = ConfigFactory.parse_file(dataset_config_path)
+        except Exception as e:
+            return False, f"Failed to load dataset config '{dataset_name}': {e}"
+
+        # 2. Load and configure challenger
         try:
             challenger_config = ConfigFactory.parse_file(challenger_config_path)
         except Exception as e:
             return False, f"Failed to load challenger config: {e}"
 
-        # 2. Prepare and launch challenger experiment
+        # --- Apply overrides to the main challenger config ---
+        # a. Set the dataset
+        challenger_config.put("dataset", dataset_config)
+
+        # b. Apply training overrides
+        if training_overrides:
+            override_config = ConfigFactory.from_dict({"training": training_overrides})
+            challenger_config = override_config.with_fallback(challenger_config)
+
+        # 3. Launch challenger experiment
         challenger_exp_name = f"{base_name}_challenger"
-        challenger_config["experiment_name"] = challenger_exp_name
-        challenger_config["race_id"] = race_id
+        challenger_config.put("experiment_name", challenger_exp_name)
+        challenger_config.put("race_id", race_id)
         if notes:
-            challenger_config["notes"] = notes
+            challenger_config.put("notes", notes)
         self._prepare_and_launch_exp(challenger_exp_name, challenger_config, "main.py")
 
-        # 3. Prepare and launch baseline experiments
+        # 4. Prepare and launch baseline experiments
         for baseline_model_name in baseline_models:
             baseline_exp_name = f"{base_name}_baseline_{baseline_model_name}"
             try:
-                # Create a new config for the baseline
+                # Create a new config for the baseline, using parts from the
+                # (now fully configured) challenger config.
                 baseline_config = ConfigTree()
                 baseline_config.put("training", challenger_config.get("training"))
                 baseline_config.put("dataset", challenger_config.get("dataset"))

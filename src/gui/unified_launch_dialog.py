@@ -16,10 +16,11 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QFileDialog,
     QGroupBox,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt
 
-from .constants import CONFIGS_DIR, BASE_MODELS_DIR
+from .constants import CONFIGS_DIR, BASE_MODELS_DIR, BASE_DATASETS_DIR
 from .config_editor import ConfigEditor
 from .search_config_editor import SearchConfigEditor
 
@@ -115,7 +116,6 @@ class UnifiedLaunchDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.single_run_editor = ConfigEditor()
-        self.single_run_editor.config_changed.connect(self._update_json_preview)
         layout.addWidget(self.single_run_editor)
 
         self.main_panel.addWidget(self.single_run_panel)
@@ -130,31 +130,14 @@ class UnifiedLaunchDialog(QDialog):
         base_config_group = QGroupBox("Base Configuration")
         base_config_layout = QVBoxLayout(base_config_group)
         self.search_run_editor = ConfigEditor()
-        self.search_run_editor.config_changed.connect(self._update_json_preview)
         base_config_layout.addWidget(self.search_run_editor)
         layout.addWidget(base_config_group)
 
         # Editor for the search-specific parameters
         self.search_config_editor = SearchConfigEditor()
-        self.search_config_editor.config_changed.connect(self._update_json_preview)
         layout.addWidget(self.search_config_editor)
 
         self.main_panel.addWidget(self.search_panel)
-
-    def _update_json_preview(self):
-        run_type = self.run_type_selector.currentText()
-        config = {}
-        if run_type == "Single Run":
-            config = self.single_run_editor.get_config()
-        elif run_type == "Hyperparameter Search":
-            config = self.search_run_editor.get_config()
-            search_config = self.search_config_editor.get_config()
-            config["search"] = search_config
-
-        if run_type == "Challenge":
-            self.json_preview.clear()
-        else:
-            self.json_preview.setText(json.dumps(config, indent=4))
 
     def _create_challenge_panel(self):
         """Creates the panel for launching a challenge."""
@@ -162,27 +145,36 @@ class UnifiedLaunchDialog(QDialog):
         layout = QVBoxLayout(self.challenge_panel)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Challenger Selection
+        # --- Task Selection ---
+        task_group = QGroupBox("Task / Dataset")
+        task_layout = QHBoxLayout(task_group)
+        task_layout.addWidget(QLabel("Task:"))
+        self.dataset_selector = QComboBox()
+        task_layout.addWidget(self.dataset_selector)
+        available_datasets = self._get_available_datasets()
+        self.dataset_selector.addItems(available_datasets)
+        layout.addWidget(task_group)
+
+        # --- Challenger Selection ---
         challenger_group = QGroupBox("Challenger Model")
-        challenger_group_layout = QVBoxLayout(challenger_group)
-        challenger_layout = QHBoxLayout()
+        challenger_layout = QVBoxLayout(challenger_group)
+        challenger_file_layout = QHBoxLayout()
         self.challenger_label = QLabel("No file selected...")
         self.challenger_button = QPushButton("Select Config...")
         self.challenger_button.clicked.connect(self._select_challenger)
-        challenger_layout.addWidget(self.challenger_label)
-        challenger_layout.addStretch()
-        challenger_layout.addWidget(self.challenger_button)
-        challenger_group_layout.addLayout(challenger_layout)
+        challenger_file_layout.addWidget(self.challenger_label)
+        challenger_file_layout.addStretch()
+        challenger_file_layout.addWidget(self.challenger_button)
+        challenger_layout.addLayout(challenger_file_layout)
         layout.addWidget(challenger_group)
 
-        # Baselines Selection
+        # --- Baselines Selection ---
         baseline_group = QGroupBox("Race Against Baselines")
-        baseline_group_layout = QVBoxLayout(baseline_group)
+        baseline_layout = QVBoxLayout(baseline_group)
         self.baseline_list = QListWidget()
-        baseline_group_layout.addWidget(self.baseline_list)
+        baseline_layout.addWidget(self.baseline_list)
         layout.addWidget(baseline_group)
 
-        # Populate baselines
         available_baselines = self._get_available_baselines()
         for baseline_name in available_baselines:
             item = QListWidgetItem(baseline_name)
@@ -190,13 +182,35 @@ class UnifiedLaunchDialog(QDialog):
             item.setCheckState(Qt.CheckState.Unchecked)
             self.baseline_list.addItem(item)
 
+        # --- Advanced Options ---
+        self.advanced_options_checkbox = QCheckBox("Advanced Options")
+        self.advanced_options_group = QGroupBox("Training Overrides")
+        advanced_options_layout = QVBoxLayout(self.advanced_options_group)
+        self.challenge_training_editor = ConfigEditor(
+            editable_keys=["training"],
+            json_preview=False,
+            file_io=False,
+        )
+        advanced_options_layout.addWidget(self.challenge_training_editor)
+
+        self.advanced_options_group.setVisible(False)
+        self.advanced_options_checkbox.toggled.connect(
+            self.advanced_options_group.setVisible
+        )
+
+        layout.addWidget(self.advanced_options_checkbox)
+        layout.addWidget(self.advanced_options_group)
+
         layout.addStretch()
         self.main_panel.addWidget(self.challenge_panel)
 
     def _on_run_type_changed(self, run_type):
         """Switches the visible panel and updates UI elements based on the selected run type."""
         self.name_label.setText("Name:")
-        if run_type == "Challenge":
+        is_challenge = run_type == "Challenge"
+        self.notes_group.setVisible(not is_challenge)
+
+        if is_challenge:
             self.main_panel.setCurrentWidget(self.challenge_panel)
             self.exp_name_input.setPlaceholderText("e.g., my_model_vs_baselines")
             self.setWindowTitle("Launch New Challenge")
@@ -232,6 +246,17 @@ class UnifiedLaunchDialog(QDialog):
         baselines.sort()
         return baselines
 
+    def _get_available_datasets(self):
+        """Scans the base datasets directory for available dataset JSON files."""
+        datasets = []
+        if not os.path.isdir(BASE_DATASETS_DIR):
+            return datasets
+        for filename in os.listdir(BASE_DATASETS_DIR):
+            if filename.endswith(".json"):
+                datasets.append(os.path.splitext(filename)[0])
+        datasets.sort()
+        return datasets
+
     def _on_accept(self):
         """Validates the inputs based on the run type and accepts the dialog."""
         run_type = self.run_type_selector.currentText()
@@ -240,7 +265,11 @@ class UnifiedLaunchDialog(QDialog):
             QMessageBox.warning(self, "Validation Error", "Name cannot be empty.")
             return
 
-        notes = self.notes_editor.toPlainText().strip()
+        notes = (
+            self.notes_editor.toPlainText().strip()
+            if not self.notes_group.isHidden()
+            else ""
+        )
 
         if run_type == "Challenge":
             if not self.challenger_config_path:
@@ -250,6 +279,14 @@ class UnifiedLaunchDialog(QDialog):
                     "You must select a challenger model config.",
                 )
                 return
+
+            selected_dataset = self.dataset_selector.currentText()
+            if not selected_dataset:
+                QMessageBox.warning(
+                    self, "Validation Error", "You must select a task/dataset."
+                )
+                return
+
             baselines = []
             for i in range(self.baseline_list.count()):
                 item = self.baseline_list.item(i)
@@ -269,8 +306,15 @@ class UnifiedLaunchDialog(QDialog):
                 "base_name": name,
                 "challenger_config": self.challenger_config_path,
                 "baselines": baselines,
+                "dataset": selected_dataset,
                 "notes": notes,
             }
+
+            if self.advanced_options_checkbox.isChecked():
+                overrides = self.challenge_training_editor.get_config()
+                if overrides.get("training"):
+                    self.launch_info["training_overrides"] = overrides["training"]
+
         elif run_type == "Single Run":
             config = self.single_run_editor.get_config()
             config["experiment_name"] = name

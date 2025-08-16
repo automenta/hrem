@@ -49,12 +49,23 @@ def temp_integration_env(tmp_path):
     with open(baseline_model_config_path, "w") as f:
         json.dump(baseline_model_config, f)
 
+    # A base dataset config
+    base_datasets_dir = configs_dir / "base" / "datasets"
+    base_datasets_dir.mkdir(parents=True)
+    dataset_config = {"name": "test_dataset", "params": {"n_samples": 200}}
+    dataset_config_path = base_datasets_dir / "test_dataset.json"
+    with open(dataset_config_path, "w") as f:
+        json.dump(dataset_config, f)
+
     patch1 = patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir))
     patch2 = patch("src.gui.experiment_manager.ARCHIVE_DIR", str(archive_dir))
     patch3 = patch(
         "src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)
     )
-    with patch1, patch2, patch3:
+    patch4 = patch(
+        "src.gui.experiment_manager.BASE_DATASETS_DIR", str(base_datasets_dir)
+    )
+    with patch1, patch2, patch3, patch4:
         yield {
             "results_dir": results_dir,
             "archive_dir": archive_dir,
@@ -95,6 +106,7 @@ def test_full_experiment_lifecycle(mock_popen, temp_integration_env):
         "challenger_config": str(temp_integration_env["challenger_config_path"]),
         "base_name": "my_race",
         "baselines": ["baseline"],
+        "dataset": "test_dataset",  # Added dataset for the race
     }
     success, msg = manager.launch_experiment_race(launch_info)
     assert success, f"Failed to launch experiment race: {msg}"
