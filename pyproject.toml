@@ -7,8 +7,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 
-[tool.setuptools]
-packages = ["src"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.black]
 line-length = 88

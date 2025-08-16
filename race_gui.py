@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 from src.gui.challenge_view import ChallengeView
 from src.gui.unified_launch_dialog import UnifiedLaunchDialog
 from src.gui.experiment_manager import ExperimentManager
+from src.gui.race_archive_dialog import RaceArchiveDialog
 from src.gui.file_watcher import ResultsPathWatcher
 from watchdog.observers import Observer
 
@@ -45,6 +46,11 @@ class RaceGUI(QMainWindow):
         button_layout.addWidget(self.refresh_button)
 
         button_layout.addStretch() # Pushes buttons to the left
+
+        self.archive_button = QPushButton("Race History")
+        self.archive_button.clicked.connect(self.open_race_archive)
+        button_layout.addWidget(self.archive_button)
+
         layout.addWidget(button_panel)
 
         self.challenge_view = ChallengeView(self.manager)
@@ -62,6 +68,10 @@ class RaceGUI(QMainWindow):
     def refresh_view(self):
         """Manually trigger a refresh of the challenge view."""
         self.challenge_view.refresh()
+
+    def open_race_archive(self):
+        dialog = RaceArchiveDialog(self.manager, self)
+        dialog.exec()
 
     def launch_new_challenge(self):
         dialog = UnifiedLaunchDialog(parent=self)

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QWidget,
     QListWidget,
+    QListWidgetItem,
     QFileDialog,
     QGroupBox,
 )
@@ -162,29 +163,34 @@ class UnifiedLaunchDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Challenger Selection
-        layout.addWidget(QLabel("Challenger Model Config:"))
+        challenger_group = QGroupBox("Challenger Model")
+        challenger_group_layout = QVBoxLayout(challenger_group)
         challenger_layout = QHBoxLayout()
         self.challenger_label = QLabel("No file selected...")
-        self.challenger_button = QPushButton("Select...")
+        self.challenger_button = QPushButton("Select Config...")
         self.challenger_button.clicked.connect(self._select_challenger)
         challenger_layout.addWidget(self.challenger_label)
         challenger_layout.addStretch()
         challenger_layout.addWidget(self.challenger_button)
-        layout.addLayout(challenger_layout)
+        challenger_group_layout.addLayout(challenger_layout)
+        layout.addWidget(challenger_group)
+
 
         # Baselines Selection
-        layout.addWidget(QLabel("Baseline Models:"))
+        baseline_group = QGroupBox("Race Against Baselines")
+        baseline_group_layout = QVBoxLayout(baseline_group)
         self.baseline_list = QListWidget()
-        baseline_button_layout = QHBoxLayout()
-        self.add_baseline_button = QPushButton("Add Baseline...")
-        self.remove_baseline_button = QPushButton("Remove Selected")
-        self.add_baseline_button.clicked.connect(self._add_baseline)
-        self.remove_baseline_button.clicked.connect(self._remove_baseline)
-        baseline_button_layout.addStretch()
-        baseline_button_layout.addWidget(self.add_baseline_button)
-        baseline_button_layout.addWidget(self.remove_baseline_button)
-        layout.addWidget(self.baseline_list)
-        layout.addLayout(baseline_button_layout)
+        baseline_group_layout.addWidget(self.baseline_list)
+        layout.addWidget(baseline_group)
+
+        # Populate baselines
+        available_baselines = self._get_available_baselines()
+        for baseline_name in available_baselines:
+            item = QListWidgetItem(baseline_name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.baseline_list.addItem(item)
+
         layout.addStretch()
         self.main_panel.addWidget(self.challenge_panel)
 
@@ -216,18 +222,16 @@ class UnifiedLaunchDialog(QDialog):
             self.challenger_config_path = path
             self.challenger_label.setText(os.path.basename(path))
 
-    def _add_baseline(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Baseline Model", BASE_MODELS_DIR, "JSON files (*.json)"
-        )
-        if path:
-            model_name = os.path.splitext(os.path.basename(path))[0]
-            if not self.baseline_list.findItems(model_name, Qt.MatchFlag.MatchExactly):
-                self.baseline_list.addItem(model_name)
-
-    def _remove_baseline(self):
-        for item in self.baseline_list.selectedItems():
-            self.baseline_list.takeItem(self.baseline_list.row(item))
+    def _get_available_baselines(self):
+        """Scans the base models directory for available baseline JSON files."""
+        baselines = []
+        if not os.path.isdir(BASE_MODELS_DIR):
+            return baselines
+        for filename in os.listdir(BASE_MODELS_DIR):
+            if filename.endswith(".json"):
+                baselines.append(os.path.splitext(filename)[0])
+        baselines.sort()
+        return baselines
 
     def _on_accept(self):
         """Validates the inputs based on the run type and accepts the dialog."""
@@ -247,18 +251,20 @@ class UnifiedLaunchDialog(QDialog):
                     "You must select a challenger model config.",
                 )
                 return
-            if self.baseline_list.count() == 0:
+            baselines = []
+            for i in range(self.baseline_list.count()):
+                item = self.baseline_list.item(i)
+                if item.checkState() == Qt.CheckState.Checked:
+                    baselines.append(item.text())
+
+            if not baselines:
                 QMessageBox.warning(
                     self,
                     "Validation Error",
-                    "You must select at least one baseline model.",
+                    "You must select at least one baseline model to race against.",
                 )
                 return
 
-            baselines = [
-                self.baseline_list.item(i).text()
-                for i in range(self.baseline_list.count())
-            ]
             self.launch_info = {
                 "type": "Challenge",
                 "base_name": name,

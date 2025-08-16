@@ -184,6 +184,63 @@ class ExperimentManager(BaseProcessManager):
 
         return experiments_data
 
+    def get_completed_races(self) -> list:
+        """
+        Gathers data for completed races, determines winners, and returns a summary.
+        """
+        all_experiments = self.get_experiments_data()
+        races = {}
+        for exp in all_experiments:
+            race_id = exp.get("race_id")
+            if race_id and race_id != "N/A":
+                if race_id not in races:
+                    races[race_id] = {
+                        "participants": [],
+                        "is_complete": True,
+                        "completed_at": "N/A",
+                        "race_id": race_id,
+                    }
+                races[race_id]["participants"].append(exp)
+                if exp["status"] == STATUS_RUNNING:
+                    races[race_id]["is_complete"] = False
+
+        completed_races = []
+        for race_id, race_data in races.items():
+            if not race_data["is_complete"]:
+                continue
+
+            winner_name = "N/A"
+            lowest_loss = float("inf")
+            participant_names = []
+            latest_date = None
+
+            for p in race_data["participants"]:
+                participant_names.append(p["name"])
+                try:
+                    p_loss = float(p["final_loss"])
+                    if p_loss < lowest_loss:
+                        lowest_loss = p_loss
+                        winner_name = p["name"]
+                except (ValueError, TypeError):
+                    continue # Ignore if loss is not a valid float
+
+                try:
+                    p_date = datetime.strptime(p["created"], "%Y-%m-%d %H:%M")
+                    if latest_date is None or p_date > latest_date:
+                        latest_date = p_date
+                except (ValueError, TypeError):
+                    continue
+
+            race_data["winner"] = winner_name
+            race_data["participants"] = participant_names
+            if latest_date:
+                race_data["completed_at"] = latest_date.strftime("%Y-%m-%d %H:%M")
+
+            completed_races.append(race_data)
+
+        return completed_races
+
+
     def archive_experiment(self, exp_name: str) -> (bool, str):
         """
         Moves an experiment's directory to the archive folder.

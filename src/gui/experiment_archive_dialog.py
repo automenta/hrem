@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 from .experiment_manager import ExperimentManager
 
 
-class ArchiveManagerDialog(QDialog):
+class ExperimentArchiveDialog(QDialog):
     """
     A dialog for managing archived experiments.
     """

@@ -38,7 +38,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QDesktopServices
 
 from .experiment_manager import ExperimentManager
-from .archive_dialog import ArchiveManagerDialog
+from .experiment_archive_dialog import ExperimentArchiveDialog
 from .trajectory_view import TrajectoryView
 from .scatter_plot_view import ScatterPlotView
 from .unified_launch_dialog import UnifiedLaunchDialog
