@@ -1,9 +1,7 @@
 import inspect
-import json
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QLabel,
     QComboBox,
     QLineEdit,

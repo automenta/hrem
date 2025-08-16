@@ -20,7 +20,8 @@ from ..layers import (
 )
 
 
-# This is a placeholder for a function that might be needed from the original repo's common.py
+# This is a placeholder for a function that might be needed from the
+# original repo's common.py
 def trunc_normal_init_(*args, **kwargs):
     # In a real scenario, we'd copy the implementation of this function.
     # For now, we'll just use a standard normal init.
@@ -100,8 +101,9 @@ class HierarchicalReasoningModel_ACTV1Block(nn.Module):
         # This is a post-norm architecture
         # Self Attention
         attn_out = self.self_attn(cos_sin=cos_sin, hidden_states=hidden_states)
+        norm_variance_epsilon = self.norm_eps
         hidden_states = rms_norm(
-            hidden_states + attn_out, variance_epsilon=self.norm_eps
+            hidden_states + attn_out, variance_epsilon=norm_variance_epsilon
         )
         # Fully Connected
         mlp_out = self.mlp(hidden_states)

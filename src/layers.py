@@ -144,9 +144,7 @@ class Attention(nn.Module):
         )
 
         if cos_sin is not None:
-            query_states, key_states = apply_rotary_pos_emb(
-                query_states, key_states, cos_sin
-            )
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos_sin)
 
         attn_output = F.scaled_dot_product_attention(
             query_states, key_states, value_states, is_causal=self.causal

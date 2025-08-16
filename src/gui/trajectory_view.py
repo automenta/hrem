@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QGraphicsTextItem,
     QGraphicsLineItem,
 )
-from PyQt6.QtCore import Qt, QRectF, QPointF
+from PyQt6.QtCore import QPointF
 from PyQt6.QtGui import QBrush, QPen, QColor, QPainter
 
 COLOR_NODE_DEFAULT = QColor("lightblue")

@@ -175,7 +175,6 @@ class UnifiedLaunchDialog(QDialog):
         challenger_group_layout.addLayout(challenger_layout)
         layout.addWidget(challenger_group)
 
-
         # Baselines Selection
         baseline_group = QGroupBox("Race Against Baselines")
         baseline_group_layout = QVBoxLayout(baseline_group)

@@ -6,7 +6,9 @@ import torch.nn.functional as F
 class ExternalMemory(nn.Module):
     """
     A Differentiable Neural Computer (DNC) memory module.
-    This implementation includes content-based addressing, allocation, and temporal linking.
+
+    This implementation includes content-based addressing, allocation,
+    and temporal linking.
     """
 
     def __init__(

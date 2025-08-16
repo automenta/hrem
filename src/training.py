@@ -241,9 +241,9 @@ class Trainer:
         self.model.train()
         total_loss = 0
 
-        for x, y in pbar:
-            x, y = x.to(self.device), y.to(self.device)
-            batch = {"inputs": x, "targets": y}
+        for data, target in pbar:
+            data, target = data.to(self.device), target.to(self.device)
+            batch = {"inputs": data, "targets": target}
 
             self.optimizer.zero_grad()
 
@@ -270,9 +270,9 @@ class Trainer:
         total_loss = 0
 
         with torch.no_grad():
-            for x, y in self.test_loader:
-                x, y = x.to(self.device), y.to(self.device)
-                batch = {"inputs": x, "targets": y}
+            for data, target in self.test_loader:
+                data, target = data.to(self.device), target.to(self.device)
+                batch = {"inputs": data, "targets": target}
 
                 loss = self._forward_pass_and_loss(batch)
                 total_loss += loss.item()

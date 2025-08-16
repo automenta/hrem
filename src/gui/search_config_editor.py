@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 
 
 class SearchConfigEditor(QWidget):
@@ -52,9 +52,8 @@ class SearchConfigEditor(QWidget):
 
         self.table = QTableWidget()
         self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(
-            ["Parameter Path", "Type", "Distribution (JSON)"]
-        )
+        headers = ["Parameter Path", "Type", "Distribution (JSON)"]
+        self.table.setHorizontalHeaderLabels(headers)
         self.table.itemChanged.connect(self.config_changed)
         self.table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch

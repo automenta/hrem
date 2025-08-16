@@ -55,9 +55,7 @@ class Mamba(nn.Module):
         (d_inner, d_state) = self.A_log.shape
 
         x_dbl = self.x_proj(x)
-        (delta, B, C) = x_dbl.split(
-            split_size=[1, d_state, d_state], dim=-1
-        )
+        (delta, B, C) = x_dbl.split(split_size=[1, d_state, d_state], dim=-1)
         delta = F.softplus(self.dt_proj(delta))
         A = -torch.exp(self.A_log.float())
         D = self.D.float()
@@ -90,18 +88,24 @@ class Mamba(nn.Module):
         h, conv_state = cache
 
         conv_state = torch.roll(conv_state, shifts=-1, dims=-1)
-        conv_state[:,:,-1] = x
-        x = torch.sum(conv_state * rearrange(self.conv1d.weight, "d 1 w -> d w"), dim=-1)
+        conv_state[:, :, -1] = x
+        x = torch.sum(
+            conv_state * rearrange(self.conv1d.weight, "d 1 w -> d w"), dim=-1
+        )
         x += self.conv1d.bias
         x = F.silu(x)
 
         x_dbl = self.x_proj(x)
-        (delta, B, C) = x_dbl.split(split_size=[1, d_state, d_state], dim=-1)
+        (delta, B, C) = x_dbl.split(
+            split_size=[1, self.d_state, self.d_state], dim=-1
+        )
         delta = F.softplus(self.dt_proj(delta))
         A = -torch.exp(self.A_log.float())
         D = self.D.float()
 
-        h = h * torch.exp(A * delta.transpose(1,0)) + (B * x.unsqueeze(-1) * delta.transpose(1,0))
+        h = h * torch.exp(A * delta.transpose(1, 0)) + (
+            B * x.unsqueeze(-1) * delta.transpose(1, 0)
+        )
         y = torch.einsum("b d n, b n -> b d", h, C)
         y = y + x * D
 

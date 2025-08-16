@@ -7,9 +7,6 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QVBoxLayout,
     QLabel,
-    QTableWidget,
-    QTableWidgetItem,
-    QHeaderView,
     QMessageBox,
     QTabWidget,
     QTextEdit,
@@ -19,13 +16,13 @@ from PyQt6.QtWidgets import (
 import pyqtgraph as pg
 from collections import defaultdict
 import random
-from PyQt6.QtCore import QDateTime
 
 
 class RaceDataWorker(QObject):
     """
     A worker to load experiment data for a race in the background.
     """
+
     data_loaded = pyqtSignal(dict)
 
     def __init__(self, manager, race_id, race_data):
@@ -47,16 +44,9 @@ class RaceDataWorker(QObject):
             if not p:
                 continue
             results, error = self.manager.load_experiment_results(p["name"])
-            loaded_data.append({
-                "participant": p,
-                "results": results,
-                "error": error
-            })
+            loaded_data.append({"participant": p, "results": results, "error": error})
 
-        output = {
-            "race_id": self.race_id,
-            "loaded_data": loaded_data
-        }
+        output = {"race_id": self.race_id, "loaded_data": loaded_data}
         self.data_loaded.emit(output)
 
 
@@ -64,17 +54,20 @@ class RaceAnimationManager(QObject):
     """
     Manages the plotting and animation of race data.
     """
+
     sigPlotClicked = pyqtSignal(str)
 
     def __init__(self, plot_widget):
         super().__init__()
         self.plot_widget = plot_widget
-        self.participants = {}  # name -> { "curve": pg.PlotDataItem, "data": [], "pen": QPen }
+        self.participants = (
+            {}
+        )  # name -> { "curve": pg.PlotDataItem, "data": [], "pen": QPen }
         self.leader_pen = pg.mkPen(width=4)
         self.normal_pen_width = 2
 
         # For hover events
-        self.hover_label = pg.TextItem(anchor=(0,1), border='w', fill=(0, 0, 0, 150))
+        self.hover_label = pg.TextItem(anchor=(0, 1), border="w", fill=(0, 0, 0, 150))
         self.hover_label.hide()
         self.plot_widget.addItem(self.hover_label)
         self.plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
@@ -93,7 +86,7 @@ class RaceAnimationManager(QObject):
         Updates the plot with new data, creating or extending lines as needed.
         Returns the current leader's info.
         """
-        leader_info = {"name": "N/A", "loss": float('inf'), "step": 0}
+        leader_info = {"name": "N/A", "loss": float("inf"), "step": 0}
 
         # First, add any new participants
         for i, item in enumerate(loaded_data):
@@ -117,6 +110,7 @@ class RaceAnimationManager(QObject):
 
             # Update curve data and store as numpy array for faster processing
             import numpy as np
+
             x_data = np.arange(len(test_loss_data))
             y_data = np.array(test_loss_data)
             self.participants[p_name]["curve"].setData(x=x_data, y=y_data)
@@ -128,7 +122,7 @@ class RaceAnimationManager(QObject):
                 leader_info = {
                     "name": p_name,
                     "loss": current_loss,
-                    "step": len(test_loss_data)
+                    "step": len(test_loss_data),
                 }
 
         # Highlight the leader
@@ -178,7 +172,9 @@ class RaceAnimationManager(QObject):
                     continue
 
                 # Find the closest point on the curve
-                distances = (x_data - mouse_point.x())**2 + (y_data - mouse_point.y())**2
+                distances = (x_data - mouse_point.x()) ** 2 + (
+                    y_data - mouse_point.y()
+                ) ** 2
                 closest_index = distances.argmin()
 
                 step = x_data[closest_index]
@@ -188,7 +184,7 @@ class RaceAnimationManager(QObject):
                 self.hover_label.setPos(mouse_point.x(), mouse_point.y())
                 self.hover_label.show()
                 found_point = True
-                break # Show label for the first curve found
+                break  # Show label for the first curve found
 
         if not found_point:
             self.hover_label.hide()
@@ -196,6 +192,7 @@ class RaceAnimationManager(QObject):
 
 class LeaderCard(QFrame):
     """A card to display the current leader's stats."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("LeaderCard")
@@ -224,21 +221,21 @@ class LeaderCard(QFrame):
         font.setPointSize(10)
         font.setItalic(True)
         self.subtitle_label.setFont(font)
-        self.subtitle_label.setStyleSheet("color: #aaa;")
+        self.subtitle_label.setStyleSheet("color: #aaa;")  # noqa: F541
         layout.addWidget(self.subtitle_label, 1, 1, alignment=Qt.AlignmentFlag.AlignTop)
 
         # Stats
         self.loss_label = self._create_stat_label("Loss")
         self.step_label = self._create_stat_label("Step")
-        self.params_label = self._create_stat_label("Params") # Placeholder
-        self.time_label = self._create_stat_label("Epoch Time") # Placeholder
+        self.params_label = self._create_stat_label("Params")  # Placeholder
+        self.time_label = self._create_stat_label("Epoch Time")  # Placeholder
 
         layout.addWidget(self.loss_label, 0, 2)
         layout.addWidget(self.step_label, 1, 2)
         layout.addWidget(self.params_label, 0, 3)
         layout.addWidget(self.time_label, 1, 3)
 
-        layout.setColumnStretch(4, 1) # Push stats to the left
+        layout.setColumnStretch(4, 1)  # Push stats to the left
 
     def _create_stat_label(self, name: str) -> QLabel:
         label = QLabel(f"<b>{name}:</b> N/A")
@@ -247,19 +244,27 @@ class LeaderCard(QFrame):
 
     def update_data(self, name: str, stats: dict, color: QColor):
         self.name_label.setText(name)
-        self.loss_label.setText(f"<b>Loss:</b> {stats.get('loss', 'N/A'):.4f}")
+        loss = stats.get('loss', 'N/A')
+        if isinstance(loss, float):
+            self.loss_label.setText(f"<b>Loss:</b> {loss:.4f}")
+        else:
+            self.loss_label.setText(f"<b>Loss:</b> {loss}")
         self.step_label.setText(f"<b>Step:</b> {stats.get('step', 'N/A')}")
         # Add more stats as they become available
         # self.params_label.setText(f"<b>Params:</b> {stats.get('params', 'N/A')}")
         # self.time_label.setText(f"<b>Epoch Time:</b> {stats.get('epoch_time', 'N/A')}")
-        self.color_swatch.setStyleSheet(f"background-color: {color.name()}; border-radius: 10px;")
-        self.setStyleSheet(f"""
+        self.color_swatch.setStyleSheet(
+            f"background-color: {color.name()}; border-radius: 10px;"
+        )
+        self.setStyleSheet(
+            f"""
             #LeaderCard {{
                 border: 2px solid {color.name()};
                 border-radius: 8px;
                 background-color: #2E2E2E;
             }}
-        """)
+        """
+        )
 
     def reset_card(self):
         self.name_label.setText("N/A")
@@ -268,27 +273,32 @@ class LeaderCard(QFrame):
         self.params_label.setText("<b>Params:</b> N/A")
         self.time_label.setText("<b>Epoch Time:</b> N/A")
         neutral_color = QColor("#555")
-        self.color_swatch.setStyleSheet(f"background-color: {neutral_color.name()}; border-radius: 10px;")
-        self.setStyleSheet(f"""
+        self.color_swatch.setStyleSheet(
+            f"background-color: {neutral_color.name()}; border-radius: 10px;"
+        )
+        self.setStyleSheet(
+            f"""
             #LeaderCard {{
                 border: 2px solid #555;
                 border-radius: 8px;
                 background-color: #2E2E2E;
             }}
-        """)
+        """
+        )
 
 
 class RaceControlPanel(QWidget):
     """
     A widget for displaying race commentary and leader status.
     """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0) # Use spacing on children
+        layout.setContentsMargins(0, 0, 0, 0)  # Use spacing on children
 
         # --- Leader Card ---
         self.leader_card = LeaderCard()
@@ -308,14 +318,16 @@ class RaceControlPanel(QWidget):
         self.commentary_box.setReadOnly(True)
         commentary_font = QFont("Courier New", 10)
         self.commentary_box.setFont(commentary_font)
-        self.commentary_box.setStyleSheet("""
+        self.commentary_box.setStyleSheet(
+            """
             QTextEdit {
                 background-color: #252525;
                 border: 1px solid #444;
                 border-radius: 4px;
                 color: #ddd;
             }
-        """)
+        """
+        )
         layout.addWidget(self.commentary_box, stretch=1)
 
     def reset_panel(self, race_id):
@@ -329,7 +341,9 @@ class RaceControlPanel(QWidget):
 
     def add_commentary(self, text):
         timestamp = QDateTime.currentDateTime().toString("hh:mm:ss")
-        self.commentary_box.append(f"<font color='#888'>[{timestamp}]</font> {text}")
+        self.commentary_box.append(
+            f"<font color='#888'>[{timestamp}]</font> {text}"
+        )
 
 
 class ChallengeView(QWidget):
@@ -345,10 +359,10 @@ class ChallengeView(QWidget):
         self.races = {}  # To store grouped race data
         self.data_thread = None
         self.data_worker = None
-        self._last_race_state = {} # To store previous state for commentary
-        self.finish_line = None # To hold the InfiniteLine object
-        self._race_winner = None # To track the winner
-        self._commentary_cooldowns = defaultdict(int) # To prevent spam
+        self._last_race_state = {}  # To store previous state for commentary
+        self.finish_line = None  # To hold the InfiniteLine object
+        self._race_winner = None  # To track the winner
+        self._commentary_cooldowns = defaultdict(int)  # To prevent spam
         self._init_ui()
 
         self.race_list.currentItemChanged.connect(self.display_race_details)
@@ -383,13 +397,14 @@ class ChallengeView(QWidget):
         plot_summary_widget = QWidget()
         plot_summary_layout = QVBoxLayout(plot_summary_widget)
         self.plot_widget = pg.PlotWidget()
-        self.animation_manager = RaceAnimationManager(self.plot_widget) # NEW
-        self.animation_manager.sigPlotClicked.connect(self.load_config_and_logs) # NEW
-        self.race_control_panel = RaceControlPanel() # NEW
-        plot_summary_layout.addWidget(self.plot_widget, stretch=3) # Give more space to plot
+        self.animation_manager = RaceAnimationManager(self.plot_widget)
+        self.animation_manager.sigPlotClicked.connect(self.load_config_and_logs)
+        self.race_control_panel = RaceControlPanel()
+        plot_summary_layout.addWidget(
+            self.plot_widget, stretch=3
+        )  # Give more space to plot
         plot_summary_layout.addWidget(self.race_control_panel, stretch=1)
         self.right_tabs.addTab(plot_summary_widget, "Race View")
-
 
         # -- Config Tab --
         self.config_view = QTextEdit()
@@ -433,6 +448,7 @@ class ChallengeView(QWidget):
         elif config:
             # Pretty-print the JSON config
             import json
+
             self.config_view.setText(json.dumps(config, indent=4))
         else:
             self.config_view.setText(f"No config file found for {exp_name}.")
@@ -446,7 +462,6 @@ class ChallengeView(QWidget):
 
         # Switch to the config tab for immediate feedback
         self.right_tabs.setCurrentWidget(self.config_view)
-
 
     def _on_item_double_clicked(self, item):
         """When a race is double-clicked, we can select the challenger in the main experiments tab."""
@@ -526,7 +541,7 @@ class ChallengeView(QWidget):
             return
 
         race_id = current_item.text()
-        self.race_control_panel.reset_panel(race_id) # Reset commentary
+        self.race_control_panel.reset_panel(race_id)  # Reset commentary
         race_data = self.races.get(race_id)
         if not race_data:
             self.plot_widget.setTitle("Error: Race data not found.")
@@ -534,12 +549,15 @@ class ChallengeView(QWidget):
 
         # --- Add Finish Line (hardcoded for now) ---
         finish_line_value = 0.05
-        self.finish_line = pg.InfiniteLine(pos=finish_line_value, angle=0, movable=False,
-                                           pen=pg.mkPen('y', style=Qt.PenStyle.DashLine, width=2),
-                                           label='Finish Line',
-                                           labelOpts={'position': 0.9, 'color': 'y'})
+        self.finish_line = pg.InfiniteLine(
+            pos=finish_line_value,
+            angle=0,
+            movable=False,
+            pen=pg.mkPen("y", style=Qt.PenStyle.DashLine, width=2),
+            label="Finish Line",
+            labelOpts={"position": 0.9, "color": "y"},
+        )
         self.plot_widget.addItem(self.finish_line)
-
 
         # --- Setup and run background worker ---
         self.data_thread = QThread()
@@ -566,51 +584,75 @@ class ChallengeView(QWidget):
                 del self._commentary_cooldowns[key]
 
         # Sort by loss
-        sorted_racers = sorted(current_state.values(), key=lambda x: x.get('loss', float('inf')))
+        sorted_racers = sorted(
+            current_state.values(), key=lambda x: x.get("loss", float("inf"))
+        )
         leader = sorted_racers[0]
-        leader_name = leader['name']
+        leader_name = leader["name"]
 
         # 1. Finish line check
-        if self._race_winner is None and leader.get('loss', float('inf')) < self.finish_line.value():
+        if (
+            self._race_winner is None
+            and leader.get("loss", float("inf")) < self.finish_line.value()
+        ):
             self._race_winner = leader_name
-            self.race_control_panel.add_commentary(f"🎉🎉🎉 <b>{leader_name}</b> has crossed the finish line! VICTORY! 🎉🎉🎉")
-            return # Stop other commentary
+            self.race_control_panel.add_commentary(
+                f"🎉🎉🎉 <b>{leader_name}</b> has crossed the finish line! "
+                "VICTORY! 🎉🎉🎉"
+            )
+            return  # Stop other commentary
 
         # 2. Leader change
-        last_leader_name = last_state.get('leader_name')
+        last_leader_name = last_state.get("leader_name")
         if leader_name != last_leader_name:
-            challenger_info = self.races.get(race_id, {}).get('challenger', {})
-            is_challenger_lead = leader_name == challenger_info.get('name')
+            challenger_info = self.races.get(race_id, {}).get("challenger", {})
+            is_challenger_lead = leader_name == challenger_info.get("name")
             if is_challenger_lead and last_leader_name:
-                 self.race_control_panel.add_commentary(f"🚀 Challenger <b>{leader_name}</b> overtakes {last_leader_name} for the lead!")
+                self.race_control_panel.add_commentary(
+                    f"🚀 Challenger <b>{leader_name}</b> overtakes "
+                    f"{last_leader_name} for the lead!"
+                )
             else:
-                 self.race_control_panel.add_commentary(f"🏆 <b>{leader_name}</b> has taken the lead!")
+                self.race_control_panel.add_commentary(
+                    f"🏆 <b>{leader_name}</b> has taken the lead!"
+                )
 
         # 3. Close race check
-        if len(sorted_racers) > 1 and 'close_race' not in self._commentary_cooldowns:
+        if len(sorted_racers) > 1 and "close_race" not in self._commentary_cooldowns:
             p1 = sorted_racers[0]
             p2 = sorted_racers[1]
-            if p1['loss'] > 0 and abs(p1['loss'] - p2['loss']) / p1['loss'] < 0.05: # 5% difference
-                self.race_control_panel.add_commentary(f"🏇 It's neck and neck! <b>{p1['name']}</b> and <b>{p2['name']}</b> are battling for the lead!")
-                self._commentary_cooldowns['close_race'] = 3 # Cooldown for 3 updates
+            if (
+                p1["loss"] > 0 and abs(p1["loss"] - p2["loss"]) / p1["loss"] < 0.05
+            ):  # 5% difference
+                self.race_control_panel.add_commentary(
+                    f"🏇 It's neck and neck! <b>{p1['name']}</b> and <b>{p2['name']}</b> are battling for the lead!"
+                )
+                self._commentary_cooldowns["close_race"] = 3  # Cooldown for 3 updates
 
         # 4. Stall check
         for name, stats in current_state.items():
-            if name in last_state and 'stall_' + name not in self._commentary_cooldowns:
-                 # Check if loss hasn't improved in the last update
-                 if stats.get('loss') is not None and stats['loss'] == last_state[name].get('loss'):
-                     self.race_control_panel.add_commentary(f"🤔 <b>{name}</b> seems to have stalled, making no progress.")
-                     self._commentary_cooldowns['stall_' + name] = 5 # Cooldown for 5 updates
+            if name in last_state and "stall_" + name not in self._commentary_cooldowns:
+                # Check if loss hasn't improved in the last update
+                if stats.get("loss") is not None and stats["loss"] == last_state[
+                    name
+                ].get("loss"):
+                    self.race_control_panel.add_commentary(
+                        f"🤔 <b>{name}</b> seems to have stalled, making no progress."
+                    )
+                    self._commentary_cooldowns["stall_" + name] = (
+                        5  # Cooldown for 5 updates
+                    )
 
         # 5. Random flavor text
         if random.random() < 0.1:
-            comment = random.choice([
-                f"Looking strong, <b>{leader_name}</b>!",
-                f"Incredible performance by <b>{leader_name}</b>.",
-                f"<b>{leader_name}</b> is widening the gap!",
-            ])
+            comment = random.choice(
+                [
+                    f"Looking strong, <b>{leader_name}</b>!",
+                    f"Incredible performance by <b>{leader_name}</b>.",
+                    f"<b>{leader_name}</b> is widening the gap!",
+                ]
+            )
             self.race_control_panel.add_commentary(comment)
-
 
     def _populate_race_details(self, data):
         """
@@ -637,25 +679,33 @@ class ChallengeView(QWidget):
                     "name": name,
                     "loss": loss_data[-1],
                     "step": len(loss_data),
-                    "is_challenger": not item["participant"].get("is_baseline_for")
+                    "is_challenger": not item["participant"].get("is_baseline_for"),
                 }
-        if leader_info['name'] != 'N/A':
-             current_race_state['leader_name'] = leader_info['name']
+        if leader_info["name"] != "N/A":
+            current_race_state["leader_name"] = leader_info["name"]
 
         # --- Commentary Engine ---
-        if not self._race_winner: # Don't generate more comments after a win
-            self._generate_commentary(current_race_state, self._last_race_state, race_id)
+        if not self._race_winner:  # Don't generate more comments after a win
+            self._generate_commentary(
+                current_race_state, self._last_race_state, race_id
+            )
 
         # --- Update Control Panel ---
         if leader_info["name"] != "N/A":
-            leader_color = self.animation_manager.get_participant_color(leader_info["name"])
+            leader_color = self.animation_manager.get_participant_color(
+                leader_info["name"]
+            )
             if leader_color:
-                self.race_control_panel.update_leader(leader_info["name"], leader_info, leader_color)
+                self.race_control_panel.update_leader(
+                    leader_info["name"], leader_info, leader_color
+                )
 
         # --- Error Reporting ---
         for item in loaded_data:
             if item["error"]:
-                self.race_control_panel.add_commentary(f"⚠️ Error for <b>{item['participant']['name']}</b>: {item['error']}")
+                self.race_control_panel.add_commentary(
+                    f"⚠️ Error for <b>{item['participant']['name']}</b>: {item['error']}"
+                )
 
         # --- Update state for next iteration ---
         self._last_race_state = current_race_state
@@ -710,7 +760,10 @@ class ChallengeView(QWidget):
         reply = QMessageBox.warning(
             self,
             "Confirm Deletion",
-            f"Are you sure you want to permanently delete the race '{race_id}' and all its associated experiments?",
+            (
+                f"Are you sure you want to permanently delete the race '{race_id}' "
+                "and all its associated experiments?"
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )

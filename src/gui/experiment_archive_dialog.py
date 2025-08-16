@@ -1,4 +1,3 @@
-import os
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -98,10 +97,14 @@ class ExperimentArchiveDialog(QDialog):
             )
             return
 
+        message = (
+            f"Are you sure you want to permanently delete '{exp_name}'?\n"
+            "This action cannot be undone."
+        )
         reply = QMessageBox.question(
             self,
             "Delete Permanently",
-            f"Are you sure you want to permanently delete '{exp_name}'?\nThis action cannot be undone.",
+            message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

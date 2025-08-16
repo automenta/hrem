@@ -81,15 +81,15 @@ class BaseProcessManager:
         statuses = {}
         finished_processes = []
         for name, (process, _log_path) in self.processes.items():
-            return_code = process.poll()
-            if return_code is None:
+            if process.poll() is None:
                 statuses[name] = STATUS_RUNNING
+                continue
+
+            finished_processes.append(name)
+            if process.returncode == 0:
+                statuses[name] = STATUS_COMPLETED
             else:
-                finished_processes.append(name)
-                if return_code == 0:
-                    statuses[name] = STATUS_COMPLETED
-                else:
-                    statuses[name] = STATUS_FAILED
+                statuses[name] = STATUS_FAILED
 
         # Clean up finished processes from the tracking dict
         for name in finished_processes:
@@ -101,7 +101,8 @@ class BaseProcessManager:
 
     def update_log_files(self):
         """
-        Iterates through running processes, reads their output, and appends it to log files.
+        Iterates through running processes, reads their output,
+        and appends it to log files.
         """
         for name, (process, log_path) in self.processes.items():
             try:

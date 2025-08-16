@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QComboBox,
     QLabel,
-    QMenu,
     QGraphicsLineItem,
     QPushButton,
 )
@@ -34,7 +33,9 @@ class CustomPlotWidget(pg.PlotWidget):
 
         filter_action.setEnabled(len(self.parent_view.selected_points) > 0)
 
-        filter_action.triggered.connect(self.parent_view._emit_filter_signal)
+        filter_action.triggered.connect(
+            self.parent_view._emit_filter_signal
+        )
         clear_action.triggered.connect(self.parent_view._clear_selection)
 
         menu.addAction(filter_action)
@@ -84,8 +85,9 @@ class ScatterPlotView(QWidget):
         # Also, we might want to move the view to center on the point
         if self.selected_points:
             pos = self.selected_points[0]["pos"]
-            self.plot_widget.getViewBox().setXRange(pos[0] - 1, pos[0] + 1, padding=0.1)
-            self.plot_widget.getViewBox().setYRange(pos[1] - 1, pos[1] + 1, padding=0.1)
+            viewbox = self.plot_widget.getViewBox()
+            viewbox.setXRange(pos[0] - 1, pos[0] + 1, padding=0.1)
+            viewbox.setYRange(pos[1] - 1, pos[1] + 1, padding=0.1)
 
     def clear_highlight(self):
         """

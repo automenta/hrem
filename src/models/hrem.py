@@ -9,8 +9,10 @@ from .external_memory import ExternalMemory
 class HREM(HierarchicalReasoningModel_ACTV1):
     """
     Hierarchical Recurrent-External Memory (HREM) model.
-    This model extends the Hierarchical Reasoning Model (HRM) by inheriting from it
-    and augmenting its forward pass with an external DNC/NTM memory module.
+
+    This model extends the Hierarchical Reasoning Model (HRM) by inheriting
+    from it and augmenting its forward pass with an external DNC/NTM memory
+    module.
     """
 
     def __init__(self, config_dict: dict):

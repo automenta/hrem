@@ -1,11 +1,11 @@
 import os
 import json
-import time
 import shutil
 import pytest
 from unittest.mock import patch
 
 from src.gui.experiment_manager import ExperimentManager
+
 
 # Fixture to create a temporary directory for integration tests
 @pytest.fixture
@@ -26,7 +26,7 @@ def temp_integration_env(tmp_path):
         "experiment_name": "test_single_run",
         "model": {"name": "test_model", "params": {"layer_sizes": [10, 5]}},
         "dataset": {"name": "test_dataset", "params": {"n_samples": 100}},
-        "training": {"epochs": 1, "batch_size": 10}
+        "training": {"epochs": 1, "batch_size": 10},
     }
     single_run_config_path = configs_dir / "single_run.json"
     with open(single_run_config_path, "w") as f:
@@ -37,7 +37,7 @@ def temp_integration_env(tmp_path):
         "experiment_name": "test_challenger",
         "model": {"name": "challenger_model", "params": {"layer_sizes": [20, 10]}},
         "dataset": {"name": "test_dataset", "params": {"n_samples": 100}},
-        "training": {"epochs": 1, "batch_size": 10}
+        "training": {"epochs": 1, "batch_size": 10},
     }
     challenger_config_path = configs_dir / "challenger.json"
     with open(challenger_config_path, "w") as f:
@@ -49,15 +49,18 @@ def temp_integration_env(tmp_path):
     with open(baseline_model_config_path, "w") as f:
         json.dump(baseline_model_config, f)
 
-    with patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir)), \
-         patch("src.gui.experiment_manager.ARCHIVE_DIR", str(archive_dir)), \
-         patch("src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)):
+    patch1 = patch("src.gui.experiment_manager.RESULTS_DIR", str(results_dir))
+    patch2 = patch("src.gui.experiment_manager.ARCHIVE_DIR", str(archive_dir))
+    patch3 = patch(
+        "src.gui.experiment_manager.BASE_MODELS_DIR", str(base_models_dir)
+    )
+    with patch1, patch2, patch3:
         yield {
             "results_dir": results_dir,
             "archive_dir": archive_dir,
             "configs_dir": configs_dir,
             "single_run_config_path": single_run_config_path,
-            "challenger_config_path": challenger_config_path
+            "challenger_config_path": challenger_config_path,
         }
 
     # Clean up created directories
@@ -74,14 +77,17 @@ def test_full_experiment_lifecycle(mock_popen, temp_integration_env):
     # Configure the mock to return a process with a valid stdout
     mock_process = mock_popen.return_value
     mock_process.stdout.fileno.return_value = 1
-    mock_process.poll.return_value = 0 # Simulate completed process
+    mock_process.poll.return_value = 0  # Simulate completed process
+    mock_process.returncode = 0  # Explicitly set the returncode
 
     manager = ExperimentManager()
 
     # --- 1. Launch a single experiment ---
     with open(temp_integration_env["single_run_config_path"], "r") as f:
         single_run_config = json.load(f)
-    success, msg = manager.launch_experiment_from_config(single_run_config, "single_exp_1")
+    success, msg = manager.launch_experiment_from_config(
+        single_run_config, "single_exp_1"
+    )
     assert success, f"Failed to launch single experiment: {msg}"
 
     # --- 2. Launch a challenge/race ---
@@ -94,7 +100,9 @@ def test_full_experiment_lifecycle(mock_popen, temp_integration_env):
     assert success, f"Failed to launch experiment race: {msg}"
 
     # Verify that the processes were "launched"
-    assert mock_popen.call_count == 3  # single_exp_1, my_race_challenger, my_race_baseline_baseline
+    assert (
+        mock_popen.call_count == 3
+    )  # single_exp_1, my_race_challenger, my_race_baseline_baseline
 
     # --- 3. Check experiment status ---
     # Manually create dummy result files to simulate completion

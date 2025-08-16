@@ -38,8 +38,7 @@ The project uses a standard `src`-layout for clean and maintainable code.
 ├── tests/                    # Unit tests
 ├── gui.py                    # The PyQt6 GUI application
 ├── main.py                   # Main entry point for running experiments
-├── pyproject.toml            # Project configuration
-└── requirements.txt          # Project dependencies
+└── pyproject.toml            # Project configuration
 ```
 
 ## Setup and Installation
@@ -57,16 +56,15 @@ The project uses a standard `src`-layout for clean and maintainable code.
     ```
 
 3.  **Install dependencies:**
-    The project dependencies are listed in `requirements.txt`.
+    The project and its development dependencies can be installed with a single command.
     ```bash
-    pip install -r requirements.txt
+    pip install -e .[dev]
+    ```
+    **Note on PyTorch:** This project uses PyTorch. For some systems, you may need to install it with a specific index URL to get the correct version for your hardware (e.g., CPU-only or a specific CUDA version). If you have issues, please see the [PyTorch website](https://pytorch.org/get-started/locally/) for instructions and install it separately before running the command above. For example:
+    ```bash
+    pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
     ```
 
-4.  **Install the project in editable mode:**
-    This step makes the `src` package available to all scripts and is crucial for the imports to work correctly.
-    ```bash
-    pip install -e .
-    ```
 
 ## Usage
 
@@ -80,10 +78,10 @@ python gui.py
 
 The GUI is organized into several tabs:
 
-- **Experiments**: The main dashboard. View a filterable, sortable table of all your experiments. Select one or more experiments to view their learning curves, compare their configurations, and manage them (clone, rename, delete).
+- **Mission Control**: The main dashboard. View a filterable, sortable table of all your experiments. Select one or more experiments to view their learning curves, compare their configurations, and manage them (clone, rename, delete).
 - **Research Tree**: A "skill tree" for your research. This view shows the parent-child relationships between your experiments, providing an intuitive map of your exploration process.
 - **Analysis**: A powerful scatter plot for visualizing the entire experiment space. Plot any hyperparameter or result against another, and use a third metric for color-coding. This view also visually connects experiments that were run as part of a "race", making it easy to see performance gaps.
-- **Search**: Manage and monitor `Optuna` hyperparameter searches.
+- **Challenges**: A dedicated view for launching and monitoring "races" between a challenger model and one or more baselines.
 
 A key workflow is the **Paired Experiment Race**. This paradigm is a powerful, universal method for rigorous algorithm evaluation. Instead of comparing a new model to a generic, pre-existing baseline, a "race" puts a "challenger" model head-to-head against one or more baseline architectures on a specific task. The framework ensures a fair comparison by using the *exact same* training and dataset parameters for all participants, isolating the architectural differences.
 
@@ -93,11 +91,12 @@ This approach is not just about winning; it's about learning. By racing algorith
 - **Drive Insight:** Over many evaluations, you can build a deep understanding of the trade-offs between model complexity, efficiency, and performance, leading to more informed and targeted research.
 
 To launch a race:
-1.  Click "Launch New".
-2.  In the dialog, select your primary "challenger" configuration file.
-3.  Give the race a base name.
-4.  Select one or more baseline models (e.g., `lstm`, `transformer`) to race against.
-5.  Launch the race. The system will automatically create and run experiments for your challenger and all selected baselines with matching training and dataset parameters.
+1.  From the "Mission Control" tab, click "Launch New...".
+2.  In the dialog that appears, select "Challenge" as the run type.
+3.  Select your primary "challenger" configuration file.
+4.  Give the race a base name.
+5.  Select one or more baseline models (e.g., `lstm`, `transformer`) to race against.
+6.  Launch the race. The system will automatically create and run experiments for your challenger and all selected baselines with matching training and dataset parameters.
 
 ### Running Experiments via Command Line
 
@@ -118,7 +117,7 @@ python search.py configs/copy_transformer_search.json
 To run the unit test suite, use `pytest`:
 
 ```bash
-pytest
+PYTHONPATH=. pytest
 ```
 
 ## Configuration

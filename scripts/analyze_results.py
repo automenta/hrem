@@ -148,10 +148,12 @@ def generate_conclusion(summary_df):
 
     if not df_copy["Test Accuracy"].isnull().all():
         best_overall = df_copy.loc[df_copy["Test Accuracy"].idxmax()]
+        exp = best_overall['Experiment']
+        ds = best_overall['Dataset']
+        acc = best_overall['Test Accuracy']
         conclusion += (
-            f"The top-performing model was **{best_overall['Experiment']}** "
-            f"on the **{best_overall['Dataset']}** task, with a test accuracy of "
-            f"**{best_overall['Test Accuracy']:.4f}**.\n\n"
+            f"The top-performing model was **{exp}** on the **{ds}** task, "
+            f"with a test accuracy of **{acc:.4f}**.\n\n"
         )
     else:
         conclusion += (
@@ -207,7 +209,8 @@ def main():
         f.write("## Summary of Results\n\n")
         f.write(summary_df.to_markdown(index=False))
         f.write("\n\n")
-        f.write(f"![Training Loss Comparison]({os.path.basename(plot_path)})\n\n")
+        plot_filename = os.path.basename(plot_path)
+        f.write(f"![Training Loss Comparison]({plot_filename})\n\n")
         f.write(conclusion_text)
 
     print(f"--- Analysis complete. Report saved to {report_path} ---")

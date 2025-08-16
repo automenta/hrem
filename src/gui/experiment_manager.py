@@ -222,7 +222,7 @@ class ExperimentManager(BaseProcessManager):
                         lowest_loss = p_loss
                         winner_name = p["name"]
                 except (ValueError, TypeError):
-                    continue # Ignore if loss is not a valid float
+                    continue  # Ignore if loss is not a valid float
 
                 try:
                     p_date = datetime.strptime(p["created"], "%Y-%m-%d %H:%M")
@@ -240,7 +240,6 @@ class ExperimentManager(BaseProcessManager):
 
         return completed_races
 
-
     def archive_experiment(self, exp_name: str) -> (bool, str):
         """
         Moves an experiment's directory to the archive folder.
@@ -250,7 +249,8 @@ class ExperimentManager(BaseProcessManager):
         dest_path = os.path.join(ARCHIVE_DIR, exp_name)
 
         if not os.path.exists(source_path):
-            return False, f"Error: Experiment directory not found at {source_path}"
+            error_msg = f"Error: Experiment directory not found at {source_path}"
+            return False, error_msg
 
         try:
             os.makedirs(ARCHIVE_DIR, exist_ok=True)
@@ -366,7 +366,10 @@ class ExperimentManager(BaseProcessManager):
                         f"Error deleting experiment '{exp['name']}': {e}",
                     )
 
-        return True, f"Successfully deleted {deleted_count} experiments for race '{race_id}'."
+        return (
+            True,
+            f"Successfully deleted {deleted_count} experiments for race '{race_id}'.",
+        )
 
     def rename_experiment(self, old_name: str, new_name: str) -> (bool, str):
         """

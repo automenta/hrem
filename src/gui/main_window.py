@@ -1,10 +1,8 @@
 import json
-import sys
 import os
 
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (
-    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -12,7 +10,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QSplitter,
-    QFileDialog,
     QMessageBox,
     QTextEdit,
     QTabWidget,
@@ -21,7 +18,6 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QLineEdit,
-    QCheckBox,
     QComboBox,
     QInputDialog,
     QAbstractItemView,
@@ -49,7 +45,6 @@ from watchdog.observers import Observer
 from .constants import (
     INITIAL_SPLITTER_SIZES,
     LAUNCH_DELAY_MS,
-    REFRESH_INTERVAL_MS,
     STATUS_RUNNING,
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
@@ -204,7 +199,9 @@ class MainGUI(QMainWindow):
         self.exp_tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.exp_tree.setSortingEnabled(True)
         self.exp_tree.header().setStretchLastSection(True)
-        self.exp_tree.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.exp_tree.header().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive
+        )
         self.exp_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.exp_tree.customContextMenuRequested.connect(
             self._show_experiment_context_menu
@@ -619,7 +616,7 @@ class MainGUI(QMainWindow):
             self.refresh_ui()
 
     def open_archive_manager(self):
-        dialog = ArchiveManagerDialog(self.manager, self)
+        dialog = ExperimentArchiveDialog(self.manager, self)
         dialog.exec()
         self.refresh_ui()
 
