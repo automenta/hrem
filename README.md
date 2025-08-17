@@ -24,20 +24,23 @@ The project uses a standard `src`-layout for clean and maintainable code.
 .
 ├── .github/workflows/ci.yml  # CI pipeline configuration
 ├── configs/                  # Experiment configuration files (JSON)
+│   ├── base/                 # Base configs for models and datasets
 │   └── default.json
-├── notebooks/                # Jupyter notebooks for analysis
-│   └── Analyze_Results.ipynb
 ├── results/                  # Output directory for models, logs, and plots
 ├── src/                      # Main source code
-│   ├── __init__.py
-│   ├── analysis.py           # Functions for plotting and reporting
-│   ├── datasets.py           # Dataset classes
-│   ├── models/               # Model architectures (MLP, HRM, HREM)
-│   ├── search.py             # Hyperparameter search script
-│   └── training.py           # The core Trainer class
+│   ├── gui/                  # Source for the PyQt6 GUI
+│   │   ├── config_editor.py
+│   │   ├── experiment_manager.py
+│   │   ├── race_launcher.py
+│   │   └── race_monitor.py
+│   ├── models/               # Model architectures
+│   ├── analysis.py
+│   ├── datasets.py
+│   ├── search.py
+│   └── training.py
 ├── tests/                    # Unit tests
-├── gui.py                    # The PyQt6 GUI application
-├── main.py                   # Main entry point for running experiments
+├── gui.py                    # Entry point for the GUI application
+├── main.py                   # Entry point for command-line experiments
 └── pyproject.toml            # Project configuration
 ```
 
@@ -68,35 +71,58 @@ The project uses a standard `src`-layout for clean and maintainable code.
 
 ## Usage
 
+The primary way to interact with this framework is through the PyQt6 GUI.
+
 ### Running the GUI
 
-The primary way to interact with this framework is through the PyQt6 GUI. To launch it, run:
+To launch the application, run:
 
 ```bash
 python gui.py
 ```
 
-The GUI is organized into several tabs:
+This will open the **Race Launcher** window, which is the starting point for running experiments.
 
-- **Mission Control**: The main dashboard. View a filterable, sortable table of all your experiments. Select one or more experiments to view their learning curves, compare their configurations, and manage them (clone, rename, delete).
-- **Research Tree**: A "skill tree" for your research. This view shows the parent-child relationships between your experiments, providing an intuitive map of your exploration process.
-- **Analysis**: A powerful scatter plot for visualizing the entire experiment space. Plot any hyperparameter or result against another, and use a third metric for color-coding. This view also visually connects experiments that were run as part of a "race", making it easy to see performance gaps.
-- **Challenges**: A dedicated view for launching and monitoring "races" between a challenger model and one or more baselines.
+### The "Experiment Race" Workflow
 
-A key workflow is the **Paired Experiment Race**. This paradigm is a powerful, universal method for rigorous algorithm evaluation. Instead of comparing a new model to a generic, pre-existing baseline, a "race" puts a "challenger" model head-to-head against one or more baseline architectures on a specific task. The framework ensures a fair comparison by using the *exact same* training and dataset parameters for all participants, isolating the architectural differences.
+A key workflow is the **Paired Experiment Race**. This paradigm is a powerful method for rigorous algorithm evaluation. Instead of comparing a new model to a generic, pre-existing baseline, a "race" puts a "challenger" model head-to-head against one or more baseline architectures on a specific task. The framework ensures a fair comparison by using the *exact same* training and dataset parameters for all participants, isolating the architectural differences.
 
-This approach is not just about winning; it's about learning. By racing algorithms against each other under controlled conditions, you can:
-- **Prove Universality:** Demonstrate that a novel architecture is not only effective on a specific problem but universally better across a range of tasks.
-- **Discover True Requirements:** Systematically vary the difficulty of the task or the constraints on the models (e.g., parameter count, training time) to understand the true computational and architectural requirements for solving a problem.
-- **Drive Insight:** Over many evaluations, you can build a deep understanding of the trade-offs between model complexity, efficiency, and performance, leading to more informed and targeted research.
+This approach is not just about winning; it's about learning. By racing algorithms against each other under controlled conditions, you can build a deep understanding of the trade-offs between model complexity, efficiency, and performance.
 
-To launch a race:
-1.  From the "Mission Control" tab, click "Launch New...".
-2.  In the dialog that appears, select "Challenge" as the run type.
-3.  Select your primary "challenger" configuration file.
-4.  Give the race a base name.
-5.  Select one or more baseline models (e.g., `lstm`, `transformer`) to race against.
-6.  Launch the race. The system will automatically create and run experiments for your challenger and all selected baselines with matching training and dataset parameters.
+### How to Launch a Race
+
+1.  **Run the GUI** with `python gui.py`.
+2.  In the **Race Launcher** window, fill out the fields:
+    - **Race Name:** A descriptive name for your race (e.g., `my-hrem-vs-lstm`).
+    - **Task / Dataset:** Select the dataset all models will be trained on.
+    - **Challenger Model:** Click "Select Config..." to choose your main model's configuration file.
+    - **View/Edit...:** After selecting a config, you can use this button to view or make temporary, in-memory changes to the challenger's configuration for this specific race. This is useful for quick experiments without creating new files.
+    - **Race Against Baselines:** Select one or more baseline models (e.g., `lstm`, `transformer`) to race against.
+    - **Notes:** Add any notes about the race.
+3.  Click **"Launch Race"**.
+
+This will close the launcher and open the **Race Monitor** window.
+
+### Monitoring the Race
+
+The **Race Monitor** provides a live look at the experiments as they run.
+- Each participant (challenger and baselines) gets its own plot showing its training and testing loss curves.
+- If there is an error loading a model's results, a clear error message will be displayed in place of its plot.
+- For each participant, you can click:
+    - **"View Config"** to see the exact configuration used for that run in a read-only viewer.
+    - **"View Log"** to see the raw stdout/stderr log file for the training process.
+- A summary table at the bottom shows the live status, latest test loss, and notes (e.g., "Winning", "Losing") for all participants.
+- Closing the Race Monitor window will stop all associated training processes.
+
+## Roadmap & Future Vision
+
+The current GUI provides a robust workflow for launching and monitoring head-to-head experiment races. Our long-term vision is to expand this into a comprehensive Experiment Management System with features like:
+
+- **Mission Control**: A main dashboard to view, filter, sort, and manage all past experiments (cloning, archiving, deleting).
+- **Research Tree**: A graph-based view to track the lineage of your experiments, making it easy to see the evolution from one idea to the next.
+- **N-Dimensional Analysis**: A powerful scatter plot view that allows you to visualize all your experiments across different hyperparameters and results to visually identify trends, outliers, and Pareto frontiers.
+
+These features will build upon the current foundation to create a truly intuitive and powerful tool for machine learning research.
 
 ### Running Experiments via Command Line
 

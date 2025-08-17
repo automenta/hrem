@@ -1,5 +1,5 @@
 import sys
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 from src.gui.race_launcher import RaceLauncher
 from src.gui.race_monitor import RaceMonitor
 from src.gui.experiment_manager import ExperimentManager
@@ -18,14 +18,27 @@ class RaceGUIApplication(QApplication):
         self.launcher.show()
 
     def start_race(self, launch_info):
-        success, message = self.manager.launch_experiment_race(launch_info)
+        success, result = self.manager.launch_experiment_race(launch_info)
         if success:
             self.launcher.hide()
+            # `result` is a list of baseline failure messages
             self.monitor = RaceMonitor(launch_info, self.manager)
             self.monitor.show()
+            if result:
+                failed_baselines_str = "\n".join(result)
+                QMessageBox.warning(
+                    self.monitor,
+                    "Baseline Launch Failures",
+                    "The race has started, but some baselines failed to launch:\n\n"
+                    f"{failed_baselines_str}",
+                )
         else:
-            # In a real app, you'd show an error message here
-            print(f"Failed to launch race: {message}")
+            # `result` is an error message string
+            QMessageBox.critical(
+                self.launcher,
+                "Race Launch Failed",
+                f"Could not launch the race.\n\nReason: {result}",
+            )
 
 def main():
     """

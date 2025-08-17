@@ -28,6 +28,8 @@ class RaceLauncher(QDialog):
     # Signal to emit the launch info dictionary
     launch_info_ready = pyqtSignal(dict)
 
+import json
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Launch New Race")
@@ -35,6 +37,7 @@ class RaceLauncher(QDialog):
         self.setMinimumHeight(600)
 
         self.challenger_config_path = None
+        self.challenger_config_data = None
         self._init_ui()
 
     def _init_ui(self):
@@ -64,11 +67,15 @@ class RaceLauncher(QDialog):
         challenger_layout = QVBoxLayout(challenger_group)
         challenger_file_layout = QHBoxLayout()
         self.challenger_label = QLabel("No file selected...")
-        self.challenger_button = QPushButton("Select Config...")
-        self.challenger_button.clicked.connect(self._select_challenger)
+        self.select_challenger_button = QPushButton("Select Config...")
+        self.select_challenger_button.clicked.connect(self._select_challenger)
+        self.edit_challenger_button = QPushButton("View/Edit...")
+        self.edit_challenger_button.clicked.connect(self._edit_challenger)
+        self.edit_challenger_button.setEnabled(False) # Disabled until a file is chosen
         challenger_file_layout.addWidget(self.challenger_label)
         challenger_file_layout.addStretch()
-        challenger_file_layout.addWidget(self.challenger_button)
+        challenger_file_layout.addWidget(self.select_challenger_button)
+        challenger_file_layout.addWidget(self.edit_challenger_button)
         challenger_layout.addLayout(challenger_file_layout)
         layout.addWidget(challenger_group)
 
@@ -109,9 +116,39 @@ class RaceLauncher(QDialog):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Challenger Config", CONFIGS_DIR, "JSON files (*.json)"
         )
-        if path:
+        if not path:
+            return
+
+        try:
+            with open(path, "r") as f:
+                self.challenger_config_data = json.load(f)
+
             self.challenger_config_path = path
             self.challenger_label.setText(os.path.basename(path))
+            self.edit_challenger_button.setEnabled(True)
+
+        except (json.JSONDecodeError, IOError) as e:
+            QMessageBox.critical(
+                self, "Error Reading Config", f"Could not read or parse the config file:\n{e}"
+            )
+            self.challenger_config_path = None
+            self.challenger_config_data = None
+            self.challenger_label.setText("No file selected...")
+            self.edit_challenger_button.setEnabled(False)
+
+    def _edit_challenger(self):
+        if not self.challenger_config_data:
+            return
+
+        editor = ConfigEditor(self.challenger_config_data, self, is_read_only=False)
+        editor.setWindowTitle("Edit Challenger Configuration")
+        if editor.exec():
+            self.challenger_config_data = editor.get_config()
+            # Indicate that the config has been modified
+            if self.challenger_config_path:
+                self.challenger_label.setText(f"{os.path.basename(self.challenger_config_path)}* (modified)")
+            else:
+                self.challenger_label.setText("Custom Config* (modified)")
 
     def _get_available_config_names(self, directory):
         """Scans a directory for available JSON configuration files."""
@@ -130,7 +167,7 @@ class RaceLauncher(QDialog):
             QMessageBox.warning(self, "Validation Error", "Race Name cannot be empty.")
             return
 
-        if not self.challenger_config_path:
+        if not self.challenger_config_data:
             QMessageBox.warning(
                 self,
                 "Validation Error",
@@ -162,7 +199,7 @@ class RaceLauncher(QDialog):
         launch_info = {
             "type": "Challenge",
             "base_name": name,
-            "challenger_config": self.challenger_config_path,
+            "challenger_config": self.challenger_config_data, # Pass the dict directly
             "baselines": baselines,
             "dataset": selected_dataset,
         }

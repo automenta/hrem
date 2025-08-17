@@ -1,8 +1,15 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSplitter
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QSplitter, QMessageBox, QDialog, QTextEdit, QTableWidget, QTableWidgetItem,
+    QHeaderView,
+)
 from PyQt6.QtCore import Qt, QTimer
 import pyqtgraph as pg
 
 from .experiment_manager import ExperimentManager
+from .config_editor import ConfigEditor
+from .constants import RESULTS_DIR
+import os
 
 class RaceMonitor(QMainWindow):
     """
@@ -14,8 +21,9 @@ class RaceMonitor(QMainWindow):
         self.manager = manager
         self.setWindowTitle(f"Race Monitor: {self.race_info['base_name']}")
         self.setGeometry(150, 150, 1200, 800)
-        self.plot_widgets = {}
+        self.participant_widgets = {}  # Will store {name: {'container': QWidget, 'plot': pg.PlotWidget, 'error_label': QLabel}}
         self.participant_names = []
+        self.plot_data_errors = {} # Will store {name: "error message"}
 
         self._init_ui()
         self._start_monitoring()
@@ -43,18 +51,24 @@ class RaceMonitor(QMainWindow):
             self.participant_names.append(baseline_name)
             self._create_participant_plot(baseline_name)
 
+        # Summary Table
+        self.summary_table = QTableWidget()
+        self.summary_table.setColumnCount(4)
+        self.summary_table.setHorizontalHeaderLabels(["Participant", "Status", "Latest Test Loss", "Notes"])
+        self.summary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.summary_table.verticalHeader().setVisible(False)
+        self.summary_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        main_layout.addWidget(self.summary_table)
+
         # Stop button
         self.stop_button = QPushButton("Stop Race")
         self.stop_button.clicked.connect(self._stop_race)
         main_layout.addWidget(self.stop_button)
 
-        # Placeholder for summary
-        self.summary_label = QLabel("Summary of the race will be displayed here.")
-        main_layout.addWidget(self.summary_label)
-
     def _create_participant_plot(self, participant_name: str, is_challenger: bool = False):
         container = QWidget()
         layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         title_text = f"<b>{participant_name}</b>"
         if is_challenger:
@@ -63,13 +77,38 @@ class RaceMonitor(QMainWindow):
         else:
             style = "color: #000080;"  # Navy
 
-        title = QLabel(f"<span style='{style}'>{title_text}</span>")
-        layout.addWidget(title)
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel(f"<span style='{style}'>{title_text}</span>"))
+        title_layout.addStretch()
+
+        view_config_button = QPushButton("View Config")
+        view_config_button.setToolTip("View the configuration for this experiment")
+        view_config_button.clicked.connect(lambda: self._view_config(participant_name))
+        title_layout.addWidget(view_config_button)
+
+        view_log_button = QPushButton("View Log")
+        view_log_button.setToolTip("View the output log for this experiment")
+        view_log_button.clicked.connect(lambda: self._view_log(participant_name))
+        title_layout.addWidget(view_log_button)
+
+        layout.addLayout(title_layout)
 
         plot_widget = pg.PlotWidget()
         plot_widget.addLegend()
-        self.plot_widgets[participant_name] = plot_widget
         layout.addWidget(plot_widget)
+
+        error_label = QLabel("An error occurred while loading data.")
+        error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        error_label.setStyleSheet("color: red; background-color: #ffe0e0; border: 1px solid red;")
+        error_label.setWordWrap(True)
+        error_label.hide() # Initially hidden
+        layout.addWidget(error_label)
+
+        self.participant_widgets[participant_name] = {
+            "container": container,
+            "plot": plot_widget,
+            "error_label": error_label
+        }
 
         self.plot_splitter.addWidget(container)
 
@@ -81,65 +120,87 @@ class RaceMonitor(QMainWindow):
     def _update_race_status(self):
         self.manager.update_log_files()
         for name in self.participant_names:
-            results_data, _ = self.manager.load_experiment_results(name)
-            if results_data:
-                self.update_plot(name, results_data)
+            results_data, error_msg = self.manager.load_experiment_results(name)
+
+            if error_msg:
+                self.plot_data_errors[name] = error_msg
+            else:
+                self.plot_data_errors.pop(name, None) # Clear any previous error
+
+            self.update_plot(name, results_data)
 
         self._update_summary()
 
     def _update_summary(self):
-        """Analyzes the current race data and updates the summary label."""
-        challenger_name = self.participant_names[0]
-        baseline_names = self.participant_names[1:]
+        """Analyzes the current race data and updates the summary table."""
+        self.summary_table.setRowCount(len(self.participant_names))
+        statuses = self.manager.get_statuses()
 
-        # 1. Get challenger's latest performance
-        challenger_results, _ = self.manager.load_experiment_results(challenger_name)
-        if not challenger_results or "test_loss" not in challenger_results or not challenger_results["test_loss"]:
-            self.summary_label.setText("<i>Waiting for challenger data...</i>")
-            return
-        challenger_loss = challenger_results["test_loss"][-1]
+        all_losses = {}
+        for i, name in enumerate(self.participant_names):
+            # Get status
+            status = statuses.get(name, "Unknown")
 
-        # 2. Find the best baseline
-        best_baseline_name = None
-        best_baseline_loss = float('inf')
+            # Get latest loss
+            loss_str = "N/A"
+            results, err = self.manager.load_experiment_results(name)
+            if err:
+                loss_str = "Error"
+            elif results and "test_loss" in results and results["test_loss"]:
+                latest_loss = results["test_loss"][-1]
+                all_losses[name] = latest_loss
+                loss_str = f"{latest_loss:.4f}"
 
-        for name in baseline_names:
-            results, _ = self.manager.load_experiment_results(name)
-            if results and "test_loss" in results and results["test_loss"]:
-                current_loss = results["test_loss"][-1]
-                if current_loss < best_baseline_loss:
-                    best_baseline_loss = current_loss
-                    best_baseline_name = name
+            # Determine notes (leader, etc.)
+            notes = ""
+            if i == 0: # Challenger
+                notes = "Challenger"
 
-        # 3. Compare and generate summary text
-        summary_html = "<h3>Race Summary</h3>"
-        if best_baseline_name is None:
-            summary_html += f"Challenger is running. No baseline data available yet.<br>"
-            summary_html += f"<b>{challenger_name}</b> Test Loss: {challenger_loss:.4f}"
-        else:
+            self.summary_table.setItem(i, 0, QTableWidgetItem(name))
+            self.summary_table.setItem(i, 1, QTableWidgetItem(status))
+            self.summary_table.setItem(i, 2, QTableWidgetItem(loss_str))
+            self.summary_table.setItem(i, 3, QTableWidgetItem(notes))
+
+        # Add "Winning" / "Losing" note
+        if self.participant_names[0] in all_losses and len(all_losses) > 1:
+            challenger_loss = all_losses[self.participant_names[0]]
+            best_baseline_loss = min(v for k, v in all_losses.items() if k != self.participant_names[0])
+
+            challenger_row = 0 # Challenger is always first
+            notes_item = self.summary_table.item(challenger_row, 3)
+            current_notes = notes_item.text()
+
             if challenger_loss < best_baseline_loss:
-                diff = best_baseline_loss - challenger_loss
-                summary_html += (f"<b>Winning:</b> Challenger (<b>{challenger_name}</b>) is leading.<br>"
-                                 f"It is <b>{diff:.4f}</b> points ahead of the best baseline ({best_baseline_name}).")
-            elif best_baseline_loss < challenger_loss:
-                diff = challenger_loss - best_baseline_loss
-                summary_html += (f"<b>Losing:</b> Challenger (<b>{challenger_name}</b>) is trailing.<br>"
-                                 f"It is <b>{diff:.4f}</b> points behind the best baseline (<b>{best_baseline_name}</b>).")
+                notes_item.setText(f"{current_notes} (Winning)")
+            elif challenger_loss > best_baseline_loss:
+                notes_item.setText(f"{current_notes} (Losing)")
             else:
-                summary_html += "<b>Tied:</b> The challenger and best baseline are currently tied."
-
-            summary_html += (f"<br><br><b>Challenger Loss:</b> {challenger_loss:.4f}<br>"
-                             f"<b>Best Baseline Loss:</b> {best_baseline_loss:.4f}")
-
-        self.summary_label.setText(summary_html)
+                notes_item.setText(f"{current_notes} (Tied)")
 
 
-    def update_plot(self, experiment_name: str, results_data: dict):
-        if experiment_name not in self.plot_widgets:
+    def update_plot(self, experiment_name: str, results_data: dict | None):
+        if experiment_name not in self.participant_widgets:
             return
 
-        plot_widget = self.plot_widgets[experiment_name]
+        widgets = self.participant_widgets[experiment_name]
+        plot_widget = widgets["plot"]
+        error_label = widgets["error_label"]
+
+        error_msg = self.plot_data_errors.get(experiment_name)
+
+        if error_msg:
+            plot_widget.hide()
+            error_label.setText(f"Data Error:\n{error_msg}")
+            error_label.show()
+            return
+
+        # If we reach here, there is no error for this plot
+        error_label.hide()
+        plot_widget.show()
         plot_widget.clear()
+
+        if not results_data:
+            return # No data to plot yet
 
         train_loss = results_data.get("train_loss", [])
         test_loss = results_data.get("test_loss", [])
@@ -159,3 +220,28 @@ class RaceMonitor(QMainWindow):
     def closeEvent(self, event):
         self._stop_race()
         super().closeEvent(event)
+
+    def _view_config(self, experiment_name: str):
+        config, err = self.manager.load_experiment_config(experiment_name)
+        if err:
+            QMessageBox.warning(self, "Error", f"Could not load config for {experiment_name}:\n{err}")
+            return
+
+        editor = ConfigEditor(config, self, is_read_only=True)
+        editor.setWindowTitle(f"Config: {experiment_name}")
+        editor.exec()
+
+    def _view_log(self, experiment_name: str):
+        log_content = self.manager.get_log_contents(experiment_name)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Log: {experiment_name}")
+        dialog.setGeometry(250, 250, 800, 600)
+
+        layout = QVBoxLayout(dialog)
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setText(log_content)
+        layout.addWidget(text_edit)
+
+        dialog.exec()

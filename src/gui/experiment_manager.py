@@ -477,16 +477,20 @@ class ExperimentManager(BaseProcessManager):
 
     def launch_experiment_race(self, launch_info: dict):
         """
-        Launches a "race" of experiments: a challenger against multiple baselines
-        on a specified task, with optional training overrides.
+        Launches a "race" of experiments: a challenger against multiple baselines.
+        Returns a tuple: (success: bool, message: str | list)
+        - On critical failure, returns (False, "error message").
+        - On success, returns (True, list_of_baseline_failures). The list is
+          empty if all baselines launched successfully.
         """
         race_id = str(uuid.uuid4())[:8]
         base_name = launch_info["base_name"]
-        challenger_config_path = launch_info["challenger_config"]
+        challenger_config = launch_info["challenger_config"]
         baseline_models = launch_info["baselines"]
         dataset_name = launch_info["dataset"]
         training_overrides = launch_info.get("training_overrides")
         notes = launch_info.get("notes")
+        baseline_failures = []
 
         # 1. Load common dataset config
         try:
@@ -499,9 +503,14 @@ class ExperimentManager(BaseProcessManager):
 
         # 2. Load and configure challenger
         try:
-            challenger_config = ConfigFactory.parse_file(challenger_config_path)
+            if isinstance(challenger_config, dict):
+                # Config is already a dictionary (from ConfigEditor)
+                challenger_config = ConfigFactory.from_dict(challenger_config)
+            else:
+                # Assume it's a file path
+                challenger_config = ConfigFactory.parse_file(challenger_config)
         except Exception as e:
-            return False, f"Failed to load challenger config: {e}"
+            return False, f"Failed to load or parse challenger config: {e}"
 
         # --- Apply overrides to the main challenger config ---
         # a. Set the dataset
@@ -518,7 +527,11 @@ class ExperimentManager(BaseProcessManager):
         challenger_config.put("race_id", race_id)
         if notes:
             challenger_config.put("notes", notes)
-        self._prepare_and_launch_exp(challenger_exp_name, challenger_config, "main.py")
+
+        try:
+            self._prepare_and_launch_exp(challenger_exp_name, challenger_config, "main.py")
+        except Exception as e:
+            return False, f"Failed to launch challenger '{challenger_exp_name}': {e}"
 
         # 4. Prepare and launch baseline experiments
         for baseline_model_name in baseline_models:
@@ -547,10 +560,11 @@ class ExperimentManager(BaseProcessManager):
                 )
 
             except Exception as e:
-                print(f"Failed to create/launch baseline {baseline_model_name}: {e}")
-                continue  # Continue to the next baseline
+                failure_msg = f"• {baseline_model_name}: {e}"
+                baseline_failures.append(failure_msg)
+                continue
 
-        return True, f"Experiment race '{base_name}' launched successfully."
+        return True, baseline_failures
 
     def _prepare_and_launch_exp(self, exp_name: str, config: dict, script_to_run: str):
         """
