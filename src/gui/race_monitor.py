@@ -59,8 +59,11 @@ class RaceMonitor(QMainWindow):
         title_text = f"<b>{participant_name}</b>"
         if is_challenger:
             title_text += " (Challenger)"
+            style = "color: #008000;"  # Green
+        else:
+            style = "color: #000080;"  # Navy
 
-        title = QLabel(title_text)
+        title = QLabel(f"<span style='{style}'>{title_text}</span>")
         layout.addWidget(title)
 
         plot_widget = pg.PlotWidget()
@@ -82,8 +85,54 @@ class RaceMonitor(QMainWindow):
             if results_data:
                 self.update_plot(name, results_data)
 
-        # Here you could add logic to update the summary label
-        # For now, we'll just keep it simple.
+        self._update_summary()
+
+    def _update_summary(self):
+        """Analyzes the current race data and updates the summary label."""
+        challenger_name = self.participant_names[0]
+        baseline_names = self.participant_names[1:]
+
+        # 1. Get challenger's latest performance
+        challenger_results, _ = self.manager.load_experiment_results(challenger_name)
+        if not challenger_results or "test_loss" not in challenger_results or not challenger_results["test_loss"]:
+            self.summary_label.setText("<i>Waiting for challenger data...</i>")
+            return
+        challenger_loss = challenger_results["test_loss"][-1]
+
+        # 2. Find the best baseline
+        best_baseline_name = None
+        best_baseline_loss = float('inf')
+
+        for name in baseline_names:
+            results, _ = self.manager.load_experiment_results(name)
+            if results and "test_loss" in results and results["test_loss"]:
+                current_loss = results["test_loss"][-1]
+                if current_loss < best_baseline_loss:
+                    best_baseline_loss = current_loss
+                    best_baseline_name = name
+
+        # 3. Compare and generate summary text
+        summary_html = "<h3>Race Summary</h3>"
+        if best_baseline_name is None:
+            summary_html += f"Challenger is running. No baseline data available yet.<br>"
+            summary_html += f"<b>{challenger_name}</b> Test Loss: {challenger_loss:.4f}"
+        else:
+            if challenger_loss < best_baseline_loss:
+                diff = best_baseline_loss - challenger_loss
+                summary_html += (f"<b>Winning:</b> Challenger (<b>{challenger_name}</b>) is leading.<br>"
+                                 f"It is <b>{diff:.4f}</b> points ahead of the best baseline ({best_baseline_name}).")
+            elif best_baseline_loss < challenger_loss:
+                diff = challenger_loss - best_baseline_loss
+                summary_html += (f"<b>Losing:</b> Challenger (<b>{challenger_name}</b>) is trailing.<br>"
+                                 f"It is <b>{diff:.4f}</b> points behind the best baseline (<b>{best_baseline_name}</b>).")
+            else:
+                summary_html += "<b>Tied:</b> The challenger and best baseline are currently tied."
+
+            summary_html += (f"<br><br><b>Challenger Loss:</b> {challenger_loss:.4f}<br>"
+                             f"<b>Best Baseline Loss:</b> {best_baseline_loss:.4f}")
+
+        self.summary_label.setText(summary_html)
+
 
     def update_plot(self, experiment_name: str, results_data: dict):
         if experiment_name not in self.plot_widgets:
