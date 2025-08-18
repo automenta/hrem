@@ -38,11 +38,11 @@ class Transformer(nn.Module):
 
     def __init__(
         self,
-        input_size: int,
+        input_size: int,  # Vocab size
         hidden_size: int,
         num_layers: int,
         num_heads: int,
-        output_size: int,
+        output_size: int,  # Vocab size
         dropout: float = 0.1,
         **kwargs,
     ):
@@ -50,16 +50,16 @@ class Transformer(nn.Module):
         Initializes the Transformer model.
 
         Args:
-            input_size: The number of input features per step.
+            input_size: The size of the vocabulary.
             hidden_size: The number of features in the transformer layers (d_model).
             num_layers: The number of sub-encoder-layers in the encoder.
             num_heads: The number of heads in the multiheadattention models.
-            output_size: The number of output features per step.
+            output_size: The size of the vocabulary.
             dropout: The dropout value.
         """
         super().__init__()
         self.d_model = hidden_size
-        self.input_embedding = nn.Linear(input_size, self.d_model)
+        self.input_embedding = nn.Embedding(input_size, self.d_model)
         self.pos_encoder = PositionalEncoding(self.d_model, dropout)
 
         self.transformer = nn.Transformer(
@@ -81,7 +81,7 @@ class Transformer(nn.Module):
         Args:
             batch: A dictionary containing the input tensor under the key 'inputs'
                    and target tensor under the key 'targets'.
-                   Shape: (batch_size, seq_len, feature_dim).
+                   Shape: (batch_size, seq_len). Values are token indices.
 
         Returns:
             A dictionary containing the output logits under the key 'logits'.
