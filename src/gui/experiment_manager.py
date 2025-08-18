@@ -46,6 +46,29 @@ class ExperimentManager(BaseProcessManager):
         """
         return self.stop_process(exp_name, force=force)
 
+    def stop_race(self, race_id: str) -> (bool, str):
+        """
+        Stops all running experiments associated with a given race_id.
+        """
+        if not race_id:
+            return False, "Error: race_id cannot be empty."
+
+        experiments_to_stop = []
+        all_experiments = self.get_experiments_data()
+        for exp in all_experiments:
+            if exp.get("race_id") == race_id and exp.get("status") == STATUS_RUNNING:
+                experiments_to_stop.append(exp["name"])
+
+        if not experiments_to_stop:
+            return False, f"No running experiments found for race_id: {race_id}"
+
+        stopped_count = 0
+        for exp_name in experiments_to_stop:
+            if self.stop_experiment(exp_name):
+                stopped_count += 1
+
+        return True, f"Stop signal sent to {stopped_count} running experiment(s) for race '{race_id}'."
+
     def get_experiment_statuses(self) -> dict:
         """
         Checks the status of all experiments, including those on disk.

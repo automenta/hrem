@@ -17,6 +17,11 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QAbstractItemView,
     QMenu,
+    QStyle,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QTabWidget,
+    QTreeWidgetItemIterator,
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QAction, QKeySequence, QColor
@@ -79,9 +84,11 @@ class ExperimentDashboard(QMainWindow):
 
         # --- Toolbar / Actions ---
         action_layout = QHBoxLayout()
-        self.launch_race_button = QPushButton("🚀 Launch New Race")
+        self.launch_race_button = QPushButton(" Launch New Race")
+        self.launch_race_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.launch_race_button.clicked.connect(self.launch_new_race)
-        self.refresh_button = QPushButton("🔄 Refresh")
+        self.refresh_button = QPushButton(" Refresh")
+        self.refresh_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
         self.refresh_button.clicked.connect(self.refresh_data)
         action_layout.addWidget(self.launch_race_button)
         action_layout.addStretch()
@@ -191,6 +198,17 @@ class ExperimentDashboard(QMainWindow):
 
 
         layout.addWidget(self.tabs)
+
+        # --- Actions with Shortcuts ---
+        refresh_action = QAction("Refresh", self)
+        refresh_action.setShortcut(QKeySequence.StandardKey.Refresh)  # F5
+        refresh_action.triggered.connect(self.refresh_data)
+        self.addAction(refresh_action)
+
+        launch_action = QAction("Launch New Race", self)
+        launch_action.setShortcut(QKeySequence("Ctrl+N"))
+        launch_action.triggered.connect(self.launch_new_race)
+        self.addAction(launch_action)
 
 
         # Define table columns
@@ -568,30 +586,100 @@ class ExperimentDashboard(QMainWindow):
             else:
                 QMessageBox.warning(self, "Deletion Failed", message)
 
+    def stop_experiment(self):
+        exp_name = self.get_selected_experiment_name()
+        if not exp_name:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Stop",
+            f"Are you sure you want to stop the running experiment '{exp_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            success = self.manager.stop_experiment(exp_name)
+            if success:
+                QMessageBox.information(self, "Success", f"Stop signal sent to '{exp_name}'.")
+                self.refresh_data()
+            else:
+                QMessageBox.warning(self, "Stop Failed", f"Could not stop experiment '{exp_name}'. It may have already finished.")
+
+    def stop_race(self):
+        exp_data = self.get_selected_experiment_data()
+        if not exp_data:
+            return
+
+        race_id = exp_data.get("race_id")
+        if not race_id or race_id == "N/A":
+            QMessageBox.warning(self, "Action Failed", "This experiment is not part of a race.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Stop Race",
+            f"Are you sure you want to stop all running experiments for race '{race_id}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            success, message = self.manager.stop_race(race_id)
+            if success:
+                QMessageBox.information(self, "Success", message)
+                self.refresh_data()
+            else:
+                QMessageBox.warning(self, "Stop Failed", message)
+
 
     def _create_context_menu(self, selected_data):
         """Creates and returns a context menu based on the selected item."""
         menu = QMenu()
 
-        # Actions available for any selection
+        is_running = selected_data.get("status") == STATUS_RUNNING
+        is_race = selected_data.get("race_id", "N/A") != "N/A"
+
+        # --- General Actions ---
         rename_action = menu.addAction("Rename...")
         rename_action.triggered.connect(self.rename_experiment)
+        rename_action.setEnabled(not is_running)
+
         clone_action = menu.addAction("Clone...")
         clone_action.triggered.connect(self.clone_experiment)
         menu.addSeparator()
 
-        # Actions specific to experiment type
-        if selected_data.get("race_id") != "N/A":
-            view_monitor_action = menu.addAction("View Race Monitor")
-            view_monitor_action.triggered.connect(self.view_race_monitor)
+        # --- Stop Actions ---
+        added_stop_action = False
+        if is_running:
+            menu.addAction("Stop Experiment").triggered.connect(self.stop_experiment)
+            added_stop_action = True
 
-            delete_race_action = menu.addAction("Delete Race...")
-            delete_race_action.triggered.connect(self.delete_race)
+        if is_race:
+            race_id = selected_data.get("race_id")
+            participants = [exp for exp in self.all_experiments_data if exp.get("race_id") == race_id]
+            is_race_running = any(p.get("status") == STATUS_RUNNING for p in participants)
+
+            if is_race_running:
+                menu.addAction("Stop Race").triggered.connect(self.stop_race)
+                added_stop_action = True
+
+        if added_stop_action:
             menu.addSeparator()
 
-        # Actions available for non-running experiments
-        is_running = selected_data.get("status") == STATUS_RUNNING
+        # --- View/Delete Race Actions ---
+        if is_race:
+            menu.addAction("View Race Monitor").triggered.connect(self.view_race_monitor)
+            race_id = selected_data.get("race_id")
+            participants = [exp for exp in self.all_experiments_data if exp.get("race_id") == race_id]
+            is_race_running = any(p.get("status") == STATUS_RUNNING for p in participants)
+            delete_race_action = menu.addAction("Delete Race...")
+            delete_race_action.triggered.connect(self.delete_race)
+            delete_race_action.setEnabled(not is_race_running)
+            menu.addSeparator()
 
+        # --- Archive/Delete Actions ---
         archive_action = menu.addAction("Archive")
         archive_action.triggered.connect(self.archive_experiment)
         archive_action.setEnabled(not is_running)
