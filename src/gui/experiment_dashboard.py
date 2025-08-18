@@ -17,13 +17,14 @@ from PyQt6.QtWidgets import (
     QMenu,
 )
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QColor
 
 from .experiment_manager import ExperimentManager
 from .race_launcher import RaceLauncher
 from .race_monitor import RaceMonitor
 from .reusable_dialogs import InputDialog
-from .constants import STATUS_RUNNING, STATUS_FAILED
+from .constants import STATUS_RUNNING, STATUS_FAILED, STATUS_COMPLETED
+from .styles import PALETTE
 
 
 class ExperimentDashboard(QMainWindow):
@@ -113,10 +114,28 @@ class ExperimentDashboard(QMainWindow):
         Repopulates the QTableWidget with the current experiment data.
         """
         self.table.setRowCount(len(self.experiments_data))
+        status_col_idx = next((i for i, (key, _) in enumerate(self.column_keys) if key == "status"), None)
+
         for row, exp_data in enumerate(self.experiments_data):
             for col, (key, _) in enumerate(self.column_keys):
                 item = QTableWidgetItem(str(exp_data.get(key, "N/A")))
                 self.table.setItem(row, col, item)
+
+            # Color code the status column
+            if status_col_idx is not None:
+                status_item = self.table.item(row, status_col_idx)
+                status_text = status_item.text()
+                color = None
+                if status_text == STATUS_RUNNING:
+                    color = PALETTE["accent_yellow"]
+                elif status_text == STATUS_FAILED:
+                    color = PALETTE["accent_red"]
+                elif status_text == STATUS_COMPLETED:
+                    color = PALETTE["accent_green"]
+
+                if color:
+                    status_item.setBackground(QColor(color))
+
 
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setSectionResizeMode(

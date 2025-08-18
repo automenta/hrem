@@ -2,6 +2,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 from src.gui.experiment_manager import ExperimentManager
 from src.gui.experiment_dashboard import ExperimentDashboard
+from src.gui.styles import get_stylesheet
 
 class RaceGUIApplication(QApplication):
     """
@@ -19,6 +20,7 @@ def main():
     The main entry point for the Race GUI application.
     """
     app = RaceGUIApplication(sys.argv)
+    app.setStyleSheet(get_stylesheet())
     sys.exit(app.exec())
 
 if __name__ == "__main__":
