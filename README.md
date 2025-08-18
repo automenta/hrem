@@ -6,20 +6,29 @@ This repository provides a robust and extensible framework for evaluating Hierar
 
 ### Core Framework Features
 
-- **Modular Models**: Easily extendable model architecture, with `MLP`, `HRM`, and a modular `HREM` (for ablation studies) included.
-- **Flexible Datasets**: Support for multiple tasks, with the sequence reversal task and a character-level language modeling task implemented.
-- **Configuration-Driven**: All experiments are defined in simple JSON files, ensuring perfect reproducibility.
-- **Robust Training Engine**: A `Trainer` class that handles device management, training, evaluation, logging, and model checkpointing.
-- **Automated Testing**: A full suite of unit tests with `pytest` and a CI pipeline with GitHub Actions to ensure code quality.
-- **Advanced Hyperparameter Search**: Integrated support for `Optuna` to automate the search for optimal hyperparameters.
-- **Comprehensive Analysis**: Tools for both programmatic and interactive analysis of results.
+-   **Modular Models**: Easily extendable model architecture, with `MLP`, `HRM`, and a modular `HREM` (for ablation studies) included.
+-   **Flexible Datasets**: Support for multiple tasks, with the sequence reversal task and a character-level language modeling task implemented.
+-   **Configuration-Driven**: All experiments are defined in simple JSON files, ensuring perfect reproducibility.
+-   **Robust Training Engine**: A `Trainer` class that handles device management, training, evaluation, logging, and model checkpointing.
+-   **Automated Testing**: A full suite of unit tests with `pytest` and a CI pipeline with GitHub Actions to ensure code quality.
+-   **Advanced Hyperparameter Search**: Integrated support for `Optuna` to automate the search for optimal hyperparameters.
+-   **Comprehensive Analysis**: Tools for both programmatic and interactive analysis of results.
 
-### GUI Features
+### GUI: The Experiment Dashboard
 
-The current version of the GUI provides a complete workflow for **Experiment Racing**. This includes:
-- **Race Launcher**: A dedicated dialog to configure and launch a "race," pitting a challenger model against one or more baselines under identical conditions.
-- **Configuration Editor**: An integrated tool to view or make temporary, in-memory modifications to a challenger's configuration before launching a race. The editor validates inputs to prevent configuration errors.
-- **Live Race Monitor**: A dashboard that provides a live, side-by-side comparison of all race participants, with real-time plots of training/testing loss, and access to configurations and logs.
+The framework includes a powerful PyQt6-based graphical user interface, the **Experiment Dashboard**, which serves as a mission control for all your research. It provides a comprehensive suite of tools to manage, visualize, and analyze your experiments.
+
+-   **Unified Experiment View**: See all your experiments in a filterable and sortable table. View their status, model, dataset, and final results at a glance.
+-   **Research Tree**: Visualize the lineage of your experiments in an intuitive tree view. Easily track how ideas evolved, which experiments were cloned from others, and the overall structure of your research.
+-   **N-Dimensional Analysis**: A powerful scatter plot view that allows you to visualize all your completed experiments across different hyperparameters (e.g., `learning_rate`, `model.params.hidden_size`) and results (`final_loss`). This tool helps you visually identify trends, outliers, and Pareto frontiers.
+-   **Wizard-Driven Race Creation**: A guided, multi-step wizard makes it easy to set up new "races." Pit a "challenger" model against multiple baselines, select a dataset, and even override training parameters for a fair, head-to-head comparison.
+-   **Live Race Monitor**: Once a race is launched, a dedicated monitor provides a live, side-by-side comparison of all participants with real-time plots of training/testing loss.
+-   **Rich Experiment Management**: Right-click on any experiment to access a context menu with actions like:
+    -   Renaming, cloning, or archiving.
+    -   Viewing logs in a dedicated, searchable log viewer.
+    -   Stopping running experiments.
+    -   Deleting results.
+-   **Archive Browser**: View and restore previously archived experiments.
 
 ## Project Structure
 
@@ -34,15 +43,11 @@ The project uses a standard `src`-layout for clean and maintainable code.
 ├── results/                  # Output directory for models, logs, and plots
 ├── src/                      # Main source code
 │   ├── gui/                  # Source for the PyQt6 GUI
-│   │   ├── config_editor.py
-│   │   ├── experiment_manager.py
-│   │   ├── race_launcher.py
+│   │   ├── experiment_dashboard.py
+│   │   ├── race_wizard.py
 │   │   └── race_monitor.py
 │   ├── models/               # Model architectures
-│   ├── analysis.py
-│   ├── datasets.py
-│   ├── search.py
-│   └── training.py
+│   ├── ...
 ├── tests/                    # Unit tests
 ├── gui.py                    # Entry point for the GUI application
 ├── main.py                   # Entry point for command-line experiments
@@ -73,7 +78,6 @@ The project uses a standard `src`-layout for clean and maintainable code.
     pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
     ```
 
-
 ## Usage
 
 The primary way to interact with this framework is through the PyQt6 GUI.
@@ -86,48 +90,39 @@ To launch the application, run:
 python gui.py
 ```
 
-This will open the **Race Launcher** window, which is the starting point for running experiments.
+This will open the **Experiment Dashboard**, which is the central hub for managing your experiments.
+
+### The Experiment Dashboard
+
+The dashboard provides three main views, accessible via tabs:
+
+1.  **📋 Table View**: This is the default view. It shows a table of all your experiments. You can filter by name, status, or dataset, and sort by any column. Right-click an experiment to open the context menu.
+2.  **🌳 Tree View**: This view organizes your experiments hierarchically. If you clone an experiment, the new one will appear as a child of the original, allowing you to track your research history.
+3.  **📈 Analysis View**: This powerful tool lets you create scatter plots to explore the relationship between hyperparameters and results for all *completed* experiments. Select different parameters for the X and Y axes, and even use a third parameter to control the size of the points. Hover over a point to see the experiment's name and details.
 
 ### The "Experiment Race" Workflow
 
-A key workflow is the **Paired Experiment Race**. This paradigm is a powerful method for rigorous algorithm evaluation. Instead of comparing a new model to a generic, pre-existing baseline, a "race" puts a "challenger" model head-to-head against one or more baseline architectures on a specific task. The framework ensures a fair comparison by using the *exact same* training and dataset parameters for all participants, isolating the architectural differences.
-
-This approach is not just about winning; it's about learning. By racing algorithms against each other under controlled conditions, you can build a deep understanding of the trade-offs between model complexity, efficiency, and performance.
+A key workflow is the **Paired Experiment Race**. This paradigm is a powerful method for rigorous algorithm evaluation. Instead of comparing a new model to a generic, pre-existing baseline, a "race" puts a "challenger" model head-to-head against one or more baseline architectures on a specific task.
 
 ### How to Launch a Race
 
-1.  **Run the GUI** with `python gui.py`.
-2.  In the **Race Launcher** window, fill out the fields:
-    - **Race Name:** A descriptive name for your race (e.g., `my-hrem-vs-lstm`).
-    - **Task / Dataset:** Select the dataset all models will be trained on.
-    - **Challenger Model:** Click "Select Config..." to choose your main model's configuration file.
-    - **View/Edit...:** After selecting a config, you can use this button to view or make temporary, in-memory changes to the challenger's configuration for this specific race. This is useful for quick experiments without creating new files.
-    - **Race Against Baselines:** Select one or more baseline models (e.g., `lstm`, `transformer`) to race against.
-    - **Notes:** Add any notes about the race.
-3.  Click **"Launch Race"**.
+1.  From the **Experiment Dashboard**, click the **" Launch New Race"** button.
+2.  This opens the **Race Creation Wizard**, which will guide you through the setup:
+    -   **Race Details**: Give your race a unique name and add descriptive notes.
+    -   **Challenger Model**: Define your main "challenger." You can create a new configuration from a template, or select an existing one from a file. You can also edit the configuration in-memory for this specific race.
+    -   **Select Baselines**: Choose one or more standard models (e.g., `lstm`, `transformer`) to race against.
+    -   **Training Configuration**: Select the dataset for the race. You can also override training parameters like epochs or learning rate for *all* participants to ensure a fair comparison.
+    -   **Summary**: Review all your settings before launching.
+3.  Click **"Finish"** to launch the race.
 
-This will close the launcher and open the **Race Monitor** window.
+This will close the wizard and automatically open the **Race Monitor**.
 
 ### Monitoring the Race
 
 The **Race Monitor** provides a live look at the experiments as they run.
-- Each participant (challenger and baselines) gets its own plot showing its training and testing loss curves.
-- If there is an error loading a model's results, a clear error message will be displayed in place of its plot.
-- For each participant, you can click:
-    - **"View Config"** to see the exact configuration used for that run in a read-only viewer.
-    - **"View Log"** to see the raw stdout/stderr log file for the training process.
-- A summary table at the bottom shows the live status, latest test loss, and notes (e.g., "Winning", "Losing") for all participants.
-- Closing the Race Monitor window will stop all associated training processes.
-
-## GUI Roadmap & Future Vision
-
-The current GUI provides a robust workflow for launching and monitoring head-to-head experiment races. Our long-term vision is to expand this into a comprehensive Experiment Management System. The following features are planned for future releases:
-
-- **Mission Control**: A main dashboard to view, filter, sort, and manage all past experiments (e.g., cloning, archiving, deleting).
-- **Research Tree**: A graph-based view to track the lineage of your experiments, making it easy to see the evolution from one idea to the next.
-- **N-Dimensional Analysis**: A powerful scatter plot view that allows you to visualize all your experiments across different hyperparameters and results to visually identify trends, outliers, and Pareto frontiers.
-
-These features will build upon the current foundation to create a truly intuitive and powerful tool for machine learning research.
+-   Each participant (challenger and baselines) gets its own plot showing its training and testing loss curves.
+-   You can view the configuration or log file for any participant.
+-   Closing the Race Monitor window will stop all associated training processes.
 
 ### Running Experiments via Command Line
 

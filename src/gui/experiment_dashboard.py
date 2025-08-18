@@ -72,6 +72,7 @@ class ExperimentDashboard(QMainWindow):
         self.race_monitors = {}  # To track open race monitor windows
         self.log_viewers = {} # To track open log viewer windows
         self.archive_browser = None # To track the archive browser window
+        self.pinned_annotations = [] # For analysis plot
 
         # --- UI ---
         self._init_ui()
@@ -186,6 +187,10 @@ class ExperimentDashboard(QMainWindow):
         selector_layout.addWidget(QLabel("Size:"))
         selector_layout.addWidget(self.size_combo)
         selector_layout.addStretch()
+        self.clear_pins_button = QPushButton("Clear Annotations")
+        self.clear_pins_button.setToolTip("Remove all pinned annotations from the plot.")
+        self.clear_pins_button.clicked.connect(self._clear_pinned_annotations)
+        selector_layout.addWidget(self.clear_pins_button)
         analysis_layout.addLayout(selector_layout)
 
         # -- Plot widget --
@@ -206,6 +211,7 @@ class ExperimentDashboard(QMainWindow):
         self.y_axis_combo.currentIndexChanged.connect(self._update_analysis_plot)
         self.size_combo.currentIndexChanged.connect(self._update_analysis_plot)
         self.scatter_plot.sigHovered.connect(self._on_scatter_hover)
+        self.scatter_plot.sigClicked.connect(self._on_scatter_click)
         self.analysis_plot_text = pg.TextItem(text="", color=(200, 200, 200), anchor=(0,1))
         self.analysis_plot.addItem(self.analysis_plot_text)
         self.analysis_plot_text.hide()
@@ -849,6 +855,8 @@ class ExperimentDashboard(QMainWindow):
         """
         Updates the scatter plot based on the current axis selections.
         """
+        self._clear_pinned_annotations()
+
         x_key = self.x_axis_combo.currentText()
         y_key = self.y_axis_combo.currentText()
         size_key = self.size_combo.currentText()
@@ -904,6 +912,43 @@ class ExperimentDashboard(QMainWindow):
             self.analysis_plot_text.show()
         else:
             self.analysis_plot_text.hide()
+
+    def _on_scatter_click(self, _, points):
+        """
+        Handles clicking on a point in the scatter plot to pin an annotation.
+        """
+        if not points:
+            return
+
+        p = points[0]
+        data = p.data()
+        pos = p.pos()
+        text = f"{data['name']}\n{self.x_axis_combo.currentText()}: {pos[0]:.4g}\n{self.y_axis_combo.currentText()}: {pos[1]:.4g}"
+
+        size_key = self.size_combo.currentText()
+        if size_key != "None" and size_key in data:
+            text += f"\n{size_key}: {data[size_key]:.4g}"
+
+        # Create a persistent text item
+        pinned_text = pg.TextItem(
+            text=text,
+            color=(220, 220, 220),
+            anchor=(0, 1),
+            border=pg.mkPen('w', width=1.5),
+            fill=pg.mkBrush(0, 0, 0, 180)
+        )
+        pinned_text.setPos(pos[0], pos[1])
+        self.pinned_annotations.append(pinned_text)
+        self.analysis_plot.addItem(pinned_text)
+
+    def _clear_pinned_annotations(self):
+        """
+        Removes all pinned annotations from the plot.
+        """
+        for item in self.pinned_annotations:
+            self.analysis_plot.removeItem(item)
+        self.pinned_annotations.clear()
+
 
     def view_experiment_logs(self):
         exp_data = self.get_selected_experiment_data()
