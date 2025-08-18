@@ -16,6 +16,7 @@ from .experiment_manager import ExperimentManager
 from .config_editor import ConfigEditor
 from .constants import RESULTS_DIR, STATUS_RUNNING, RACES_DIR
 from .combined_race_plot import CombinedRacePlot
+from .utils import flatten_dict
 import os
 
 class RaceMonitor(QMainWindow):
@@ -303,21 +304,19 @@ class RaceMonitor(QMainWindow):
 
         self.hparam_table.resizeColumnsToContents()
 
-    def _flatten_dict(self, d, parent_key='', sep='.'):
-        items = []
-        for k, v in d.items():
-            new_key = parent_key + sep + k if parent_key else k
-            if isinstance(v, dict):
-                items.extend(self._flatten_dict(v, new_key, sep=sep).items())
-            else:
-                if new_key not in ["experiment_name", "race_id", "is_baseline_for", "notes", "parent_experiment"]:
-                    items.append((new_key, v))
-        return dict(items)
-
     def _get_differentiating_hparams(self, all_configs: dict[str, dict]) -> list[str]:
         if not all_configs or len(all_configs) < 2: return []
-        flat_configs = {name: self._flatten_dict(cfg) for name, cfg in all_configs.items()}
-        all_keys = set().union(*(d.keys() for d in flat_configs.values()))
+
+        # Define keys to ignore during diff
+        ignored_keys = {"experiment_name", "race_id", "is_baseline_for", "notes", "parent_experiment"}
+
+        flat_configs = {name: flatten_dict(cfg) for name, cfg in all_configs.items()}
+
+        # Get all unique keys across all configs, excluding ignored ones
+        all_keys = set()
+        for cfg in flat_configs.values():
+            all_keys.update(k for k in cfg.keys() if k not in ignored_keys)
+
         diff_keys = []
         config_names = list(flat_configs.keys())
         for key in sorted(list(all_keys)):

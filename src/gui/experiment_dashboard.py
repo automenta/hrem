@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QDialog,
     QLineEdit,
+    QComboBox,
+    QLabel,
     QFormLayout,
     QDialogButtonBox,
     QAbstractItemView,
@@ -18,14 +20,33 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QAction, QKeySequence, QColor
+import pyqtgraph as pg
 
 from .experiment_manager import ExperimentManager
 from .race_launcher import RaceLauncher
 from .race_monitor import RaceMonitor
 from .reusable_dialogs import InputDialog
+from .utils import flatten_dict
 from .constants import STATUS_RUNNING, STATUS_FAILED, STATUS_COMPLETED
 from .styles import PALETTE
 
+
+class NumericTableWidgetItem(QTableWidgetItem):
+    """
+    A custom QTableWidgetItem for sorting numbers correctly.
+    It handles cases where the text might not be a valid number.
+    """
+    def __lt__(self, other):
+        self_text = self.text()
+        other_text = other.text()
+        try:
+            self_float = float(self_text)
+            other_float = float(other_text)
+            return self_float < other_float
+        except ValueError:
+            # If one is not a number, it can be treated as "smaller" or "larger"
+            # Here, we'll just fall back to string comparison, which is stable.
+            return self_text < other_text
 
 class ExperimentDashboard(QMainWindow):
     """
@@ -39,7 +60,8 @@ class ExperimentDashboard(QMainWindow):
         self.setGeometry(100, 100, 1400, 800)
 
         # --- Data ---
-        self.experiments_data = []
+        self.all_experiments_data = [] # Holds all data from the manager
+        self.experiments_data = [] # Holds the filtered and sorted data to be displayed
         self.race_monitors = {}  # To track open race monitor windows
 
         # --- UI ---
@@ -66,6 +88,29 @@ class ExperimentDashboard(QMainWindow):
         action_layout.addWidget(self.refresh_button)
         layout.addLayout(action_layout)
 
+        # --- Filter Controls ---
+        filter_box = QHBoxLayout()
+        filter_box.addWidget(QLabel("Filter by:"))
+        self.name_filter_input = QLineEdit()
+        self.name_filter_input.setPlaceholderText("Name contains...")
+        self.name_filter_input.textChanged.connect(self._apply_filters)
+        filter_box.addWidget(self.name_filter_input)
+
+        self.status_filter_combo = QComboBox()
+        self.status_filter_combo.addItems(["All", STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED])
+        self.status_filter_combo.currentIndexChanged.connect(self._apply_filters)
+        filter_box.addWidget(QLabel("Status:"))
+        filter_box.addWidget(self.status_filter_combo)
+
+        self.dataset_filter_combo = QComboBox()
+        # Populated dynamically
+        self.dataset_filter_combo.currentIndexChanged.connect(self._apply_filters)
+        filter_box.addWidget(QLabel("Dataset:"))
+        filter_box.addWidget(self.dataset_filter_combo)
+        filter_box.addStretch()
+        layout.addLayout(filter_box)
+
+
         # --- Experiment Table ---
         self.table = QTableWidget()
         self.table.setSelectionBehavior(
@@ -73,9 +118,80 @@ class ExperimentDashboard(QMainWindow):
         )
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.setSortingEnabled(True) # Enable sorting
         self.table.customContextMenuRequested.connect(self.show_context_menu)
         self.table.doubleClicked.connect(self.handle_double_click)
-        layout.addWidget(self.table)
+
+        # --- Tree View Tab ---
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(3)
+        self.tree.setHeaderLabels(["Experiment", "Status", "Final Loss"])
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree.itemDoubleClicked.connect(self.handle_double_click)
+        self.tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+
+        # --- Tab Widget ---
+        self.tabs = QTabWidget()
+        table_container = QWidget()
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0,0,0,0)
+        table_layout.addWidget(self.table)
+        self.tabs.addTab(table_container, "📋 Table")
+
+        tree_container = QWidget()
+        tree_layout = QVBoxLayout(tree_container)
+        tree_layout.setContentsMargins(0,0,0,0)
+        tree_layout.addWidget(self.tree)
+        self.tabs.addTab(tree_container, "🌳 Tree")
+
+        # --- Analysis Tab ---
+        analysis_container = QWidget()
+        analysis_layout = QVBoxLayout(analysis_container)
+        analysis_layout.setContentsMargins(0, 0, 0, 0)
+
+        # -- Selector controls --
+        selector_layout = QHBoxLayout()
+        self.x_axis_combo = QComboBox()
+        self.x_axis_combo.setToolTip("Select the metric or hyperparameter for the X-axis.")
+        self.y_axis_combo = QComboBox()
+        self.y_axis_combo.setToolTip("Select the metric or hyperparameter for the Y-axis.")
+        self.size_combo = QComboBox()
+        self.size_combo.setToolTip("Select a metric to represent by point size (or 'None').")
+        selector_layout.addWidget(QLabel("X-Axis:"))
+        selector_layout.addWidget(self.x_axis_combo)
+        selector_layout.addWidget(QLabel("Y-Axis:"))
+        selector_layout.addWidget(self.y_axis_combo)
+        selector_layout.addWidget(QLabel("Size:"))
+        selector_layout.addWidget(self.size_combo)
+        selector_layout.addStretch()
+        analysis_layout.addLayout(selector_layout)
+
+        # -- Plot widget --
+        self.analysis_plot = pg.PlotWidget()
+        self.scatter_plot = pg.ScatterPlotItem(
+            size=12, pen=pg.mkPen(None), brush=pg.mkBrush(255, 255, 255, 150),
+            hoverable=True, hoverBrush=pg.mkBrush(255, 0, 0, 200)
+        )
+        self.analysis_plot.addItem(self.scatter_plot)
+        self.analysis_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.analysis_plot.getPlotItem().setMenuEnabled(False) # Disable default context menu
+        analysis_layout.addWidget(self.analysis_plot)
+
+        self.tabs.addTab(analysis_container, "📈 Analysis")
+
+        # Connect signals
+        self.x_axis_combo.currentIndexChanged.connect(self._update_analysis_plot)
+        self.y_axis_combo.currentIndexChanged.connect(self._update_analysis_plot)
+        self.size_combo.currentIndexChanged.connect(self._update_analysis_plot)
+        self.scatter_plot.sigHovered.connect(self._on_scatter_hover)
+        self.analysis_plot_text = pg.TextItem(text="", color=(200, 200, 200), anchor=(0,1))
+        self.analysis_plot.addItem(self.analysis_plot_text)
+        self.analysis_plot_text.hide()
+
+
+        layout.addWidget(self.tabs)
+
 
         # Define table columns
         self.column_keys = [
@@ -98,27 +214,88 @@ class ExperimentDashboard(QMainWindow):
 
     def refresh_data(self):
         """
-        Fetches the latest experiment data and updates the table.
+        Fetches the latest experiment data, updates filters, and refreshes the table.
         """
         current_selection = self.get_selected_experiment_name()
-        self.experiments_data = sorted(
-            self.manager.get_experiments_data(),
-            key=lambda x: x.get("created", ""),
-            reverse=True,
-        )
-        self.update_table()
+        # Fetch all data from the manager
+        self.all_experiments_data = self.manager.get_experiments_data()
+
+        self._update_filter_options()
+        self._apply_filters() # This calls update_table
+        self._update_tree_view() # This calls update_tree
+        self._update_analysis_view() # This calls the new analysis update method
+
         self.select_experiment_by_name(current_selection)
+
+    def _update_filter_options(self):
+        """
+        Updates the dataset filter dropdown with available datasets.
+        """
+        current_dataset = self.dataset_filter_combo.currentText()
+        datasets = {"All"}
+        for exp in self.all_experiments_data:
+            dataset = exp.get("dataset")
+            if dataset and dataset != "N/A":
+                datasets.add(dataset)
+
+        self.dataset_filter_combo.blockSignals(True)
+        self.dataset_filter_combo.clear()
+        self.dataset_filter_combo.addItems(sorted(list(datasets)))
+        idx = self.dataset_filter_combo.findText(current_dataset)
+        if idx != -1:
+            self.dataset_filter_combo.setCurrentIndex(idx)
+        else:
+            self.dataset_filter_combo.setCurrentIndex(0)
+        self.dataset_filter_combo.blockSignals(False)
+
+    def _apply_filters(self):
+        """
+        Filters the full experiment list based on UI controls and updates the table.
+        """
+        name_filter = self.name_filter_input.text().lower().strip()
+        status_filter = self.status_filter_combo.currentText()
+        dataset_filter = self.dataset_filter_combo.currentText()
+
+        filtered_data = self.all_experiments_data
+
+        if name_filter:
+            filtered_data = [
+                exp for exp in filtered_data
+                if name_filter in exp.get("name", "").lower()
+            ]
+        if status_filter != "All":
+            filtered_data = [
+                exp for exp in filtered_data
+                if exp.get("status") == status_filter
+            ]
+        if dataset_filter != "All":
+            filtered_data = [
+                exp for exp in filtered_data
+                if exp.get("dataset") == dataset_filter
+            ]
+
+        self.experiments_data = filtered_data
+        self.update_table()
+
 
     def update_table(self):
         """
-        Repopulates the QTableWidget with the current experiment data.
+        Repopulates the QTableWidget with the current (filtered) experiment data.
         """
+        self.table.setSortingEnabled(False) # Disable sorting during update for performance
+        self.table.clearContents()
+
         self.table.setRowCount(len(self.experiments_data))
         status_col_idx = next((i for i, (key, _) in enumerate(self.column_keys) if key == "status"), None)
+        loss_col_idx = next((i for i, (key, _) in enumerate(self.column_keys) if key == "final_loss"), None)
 
         for row, exp_data in enumerate(self.experiments_data):
             for col, (key, _) in enumerate(self.column_keys):
-                item = QTableWidgetItem(str(exp_data.get(key, "N/A")))
+                value_str = str(exp_data.get(key, "N/A"))
+                if col == loss_col_idx:
+                    item = NumericTableWidgetItem(value_str)
+                else:
+                    item = QTableWidgetItem(value_str)
                 self.table.setItem(row, col, item)
 
             # Color code the status column
@@ -137,6 +314,7 @@ class ExperimentDashboard(QMainWindow):
                     status_item.setBackground(QColor(color))
 
 
+        self.table.setSortingEnabled(True)
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
@@ -149,12 +327,26 @@ class ExperimentDashboard(QMainWindow):
         )
 
     def get_selected_experiment_data(self):
-        """Returns the full data dict for the selected experiment."""
-        selected_rows = self.table.selectionModel().selectedRows()
-        if not selected_rows:
-            return None
-        selected_row_index = selected_rows[0].row()
-        return self.experiments_data[selected_row_index]
+        """Returns the full data dict for the selected experiment from the active view."""
+        current_tab_index = self.tabs.currentIndex()
+        if current_tab_index == 0:  # Table view
+            selected_rows = self.table.selectionModel().selectedRows()
+            if not selected_rows:
+                return None
+            name_item = self.table.item(selected_rows[0].row(), 0)
+            if not name_item:
+                return None
+            name = name_item.text()
+            return next((exp for exp in self.all_experiments_data if exp['name'] == name), None)
+
+        elif current_tab_index == 1:  # Tree view
+            selected_items = self.tree.selectedItems()
+            if not selected_items:
+                return None
+            # Data is stored in the first column of the item
+            return selected_items[0].data(0, Qt.ItemDataRole.UserRole)
+
+        return None
 
     def get_selected_experiment_name(self):
         """Returns the name of the selected experiment."""
@@ -162,13 +354,26 @@ class ExperimentDashboard(QMainWindow):
         return exp_data["name"] if exp_data else None
 
     def select_experiment_by_name(self, name_to_select):
-        """Selects a row in the table based on the experiment name."""
+        """Selects an item in the active view based on the experiment name."""
         if not name_to_select:
             return
-        for row, exp_data in enumerate(self.experiments_data):
-            if exp_data["name"] == name_to_select:
-                self.table.selectRow(row)
-                break
+
+        current_tab_index = self.tabs.currentIndex()
+        if current_tab_index == 0: # Table View
+            for row in range(self.table.rowCount()):
+                if self.table.item(row, 0).text() == name_to_select:
+                    self.table.selectRow(row)
+                    return
+
+        elif current_tab_index == 1: # Tree View
+            # We need to traverse the tree to find the item
+            iterator = QTreeWidgetItemIterator(self.tree)
+            while iterator.value():
+                item = iterator.value()
+                if item.text(0) == name_to_select:
+                    self.tree.setCurrentItem(item)
+                    return
+                iterator += 1
 
     # --- Actions ---
 
@@ -398,21 +603,196 @@ class ExperimentDashboard(QMainWindow):
         return menu
 
     def show_context_menu(self, pos):
+        sender = self.sender()
         selected_data = self.get_selected_experiment_data()
+
         if not selected_data:
             return
 
         menu = self._create_context_menu(selected_data)
-        menu.exec(self.table.mapToGlobal(pos))
 
-    def handle_double_click(self, model_index):
-        if not model_index.isValid():
+        if sender == self.table:
+            menu.exec(self.table.mapToGlobal(pos))
+        elif sender == self.tree:
+            menu.exec(self.tree.mapToGlobal(pos))
+
+
+    def handle_double_click(self, item, column=None):
+        """Handles double clicks from both table and tree."""
+        exp_data = self.get_selected_experiment_data()
+        if exp_data and exp_data.get("race_id") != "N/A":
+            # view_race_monitor uses get_selected_experiment_data, so it works for both
+            self.view_race_monitor()
+
+    def _update_tree_view(self):
+        """Populates the tree view with the experiment hierarchy."""
+        self.tree.clear()
+        graph = self.manager.get_experiment_graph()
+        nodes = graph['nodes']
+        edges = graph['edges']
+        roots = graph['roots']
+
+        # Create a dictionary of children for easy lookup
+        children_map = {}
+        for parent, child in edges:
+            if parent not in children_map:
+                children_map[parent] = []
+            children_map[parent].append(child)
+
+        def add_children(parent_item, parent_name):
+            if parent_name not in children_map:
+                return
+            # Sort children by creation date for consistent ordering
+            sorted_children = sorted(
+                children_map[parent_name],
+                key=lambda name: nodes.get(name, {}).get("created", ""),
+                reverse=True
+            )
+            for child_name in sorted_children:
+                child_data = nodes[child_name]
+                child_item = QTreeWidgetItem([
+                    child_data.get('name', 'N/A'),
+                    child_data.get('status', 'N/A'),
+                    str(child_data.get('final_loss', 'N/A')),
+                ])
+                child_item.setData(0, Qt.ItemDataRole.UserRole, child_data) # Store data
+                parent_item.addChild(child_item)
+                add_children(child_item, child_name)
+
+        # Sort roots by creation date
+        sorted_roots = sorted(
+            roots,
+            key=lambda name: nodes.get(name, {}).get("created", ""),
+            reverse=True
+        )
+        for root_name in sorted_roots:
+            root_data = nodes[root_name]
+            root_item = QTreeWidgetItem([
+                root_data.get('name', 'N/A'),
+                root_data.get('status', 'N/A'),
+                str(root_data.get('final_loss', 'N/A')),
+            ])
+            root_item.setData(0, Qt.ItemDataRole.UserRole, root_data) # Store data
+            self.tree.addTopLevelItem(root_item)
+            add_children(root_item, root_name)
+
+        self.tree.expandAll()
+        for i in range(self.tree.columnCount()):
+            self.tree.resizeColumnToContents(i)
+
+
+    def _update_combo_box(self, combo, keys):
+        current_text = combo.currentText()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(keys)
+        idx = combo.findText(current_text)
+        if idx != -1:
+            combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def _update_analysis_view(self):
+        """
+        Gathers data for the N-D analysis plot and populates the selectors.
+        """
+        all_keys = set()
+        self.analysis_data_points = []
+
+        for exp in self.all_experiments_data:
+            if exp.get("status") != STATUS_COMPLETED:
+                continue
+
+            point = {'name': exp['name']}
+
+            config, err = self.manager.load_experiment_config(exp['name'])
+            if config and not err:
+                flat_config = flatten_dict(config)
+                for k, v in flat_config.items():
+                    if isinstance(v, (int, float)):
+                        all_keys.add(k)
+                        point[k] = v
+
+            results, err = self.manager.load_experiment_results(exp['name'])
+            if results and not err:
+                # Add final loss from summary if available
+                if "final_loss" in exp and exp["final_loss"] != "N/A":
+                    try:
+                        all_keys.add("final_loss")
+                        point["final_loss"] = float(exp["final_loss"])
+                    except (ValueError, TypeError):
+                        pass
+
+            self.analysis_data_points.append(point)
+
+        sorted_keys = sorted(list(all_keys))
+        self._update_combo_box(self.x_axis_combo, sorted_keys)
+        self._update_combo_box(self.y_axis_combo, sorted_keys)
+
+        size_keys = ["None"] + sorted_keys
+        self._update_combo_box(self.size_combo, size_keys)
+
+        self._update_analysis_plot()
+
+    def _update_analysis_plot(self):
+        """
+        Updates the scatter plot based on the current axis selections.
+        """
+        x_key = self.x_axis_combo.currentText()
+        y_key = self.y_axis_combo.currentText()
+        size_key = self.size_combo.currentText()
+
+        if not x_key or not y_key:
+            self.scatter_plot.clear()
             return
 
-        exp_data = self.experiments_data[model_index.row()]
-        if exp_data.get("race_id") != "N/A":
-            self.view_race_monitor()
-        # Could add other double-click actions here, e.g., view logs for single experiments
+        points = []
+        sizes = []
+        for p in self.analysis_data_points:
+            if x_key in p and y_key in p:
+                size = 12
+                if size_key != "None" and size_key in p:
+                    size = p[size_key]
+                sizes.append(size)
+                points.append({'pos': (p[x_key], p[y_key]), 'data': p})
+
+        if not points:
+            self.scatter_plot.clear()
+            return
+
+        # Simple size normalization
+        min_size_val = min(sizes)
+        max_size_val = max(sizes)
+        for i, p in enumerate(points):
+            if max_size_val > min_size_val and size_key != "None":
+                norm_size = 5 + 20 * (sizes[i] - min_size_val) / (max_size_val - min_size_val)
+                p['size'] = norm_size
+            else:
+                p['size'] = 12
+
+        self.scatter_plot.setData(points)
+        self.analysis_plot.setLabel('bottom', x_key)
+        self.analysis_plot.setLabel('left', y_key)
+        if size_key != "None":
+            self.analysis_plot.getPlotItem().getAxis('left').setLabel(y_key, units=f"(size by {size_key})")
+
+
+    def _on_scatter_hover(self, _, points):
+        if points:
+            p = points[0]
+            data = p.data()
+            pos = p.pos()
+            text = f"{data['name']}\n{self.x_axis_combo.currentText()}: {pos[0]:.4g}\n{self.y_axis_combo.currentText()}: {pos[1]:.4g}"
+
+            size_key = self.size_combo.currentText()
+            if size_key != "None" and size_key in data:
+                text += f"\n{size_key}: {data[size_key]:.4g}"
+
+            self.analysis_plot_text.setText(text)
+            self.analysis_plot_text.setPos(pos[0], pos[1])
+            self.analysis_plot_text.show()
+        else:
+            self.analysis_plot_text.hide()
+
 
     def closeEvent(self, event):
         # Clean up any open monitor windows
