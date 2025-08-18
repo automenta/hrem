@@ -105,7 +105,7 @@ def test_full_experiment_lifecycle(mock_popen, temp_integration_env):
     launch_info = {
         "challenger_config": str(temp_integration_env["challenger_config_path"]),
         "base_name": "my_race",
-        "baselines": ["baseline"],
+            "standard_baselines": ["baseline"],
         "dataset": "test_dataset",  # Added dataset for the race
     }
     success, msg = manager.launch_experiment_race(launch_info)

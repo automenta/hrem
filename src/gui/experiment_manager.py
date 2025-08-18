@@ -315,6 +315,20 @@ class ExperimentManager(BaseProcessManager):
         except Exception as e:
             return False, f"Error restoring experiment: {e}"
 
+    def delete_single_experiment(self, exp_name: str) -> (bool, str):
+        """
+        Permanently deletes a single experiment's directory from the results folder.
+        """
+        exp_path = os.path.join(self.RESULTS_DIR, exp_name)
+        if not os.path.exists(exp_path):
+            return False, f"Error: Experiment not found at {exp_path}"
+
+        try:
+            shutil.rmtree(exp_path)
+            return True, f"Experiment {exp_name} permanently deleted."
+        except Exception as e:
+            return False, f"Error deleting experiment: {e}"
+
     def delete_experiment_permanently(self, exp_name: str) -> (bool, str):
         """
         Permanently deletes an experiment's directory from the archive.
@@ -486,7 +500,8 @@ class ExperimentManager(BaseProcessManager):
         race_id = str(uuid.uuid4())[:8]
         base_name = launch_info["base_name"]
         challenger_config = launch_info["challenger_config"]
-        baseline_models = launch_info["baselines"]
+        standard_baselines = launch_info.get("standard_baselines", [])
+        dynamic_baselines = launch_info.get("dynamic_baselines", [])
         dataset_name = launch_info["dataset"]
         training_overrides = launch_info.get("training_overrides")
         notes = launch_info.get("notes")
@@ -533,8 +548,8 @@ class ExperimentManager(BaseProcessManager):
         except Exception as e:
             return False, f"Failed to launch challenger '{challenger_exp_name}': {e}"
 
-        # 4. Prepare and launch baseline experiments
-        for baseline_model_name in baseline_models:
+        # 4. Prepare and launch standard baseline experiments
+        for baseline_model_name in standard_baselines:
             baseline_exp_name = f"{base_name}_baseline_{baseline_model_name}"
             try:
                 # Create a new config for the baseline, using parts from the
@@ -561,6 +576,32 @@ class ExperimentManager(BaseProcessManager):
 
             except Exception as e:
                 failure_msg = f"• {baseline_model_name}: {e}"
+                baseline_failures.append(failure_msg)
+                continue
+
+        # 5. Prepare and launch dynamic baseline experiments
+        for i, dyn_baseline_config in enumerate(dynamic_baselines):
+            model_name = dyn_baseline_config.get("model", {}).get("name", "unknown")
+            baseline_exp_name = f"{base_name}_baseline_{model_name}_dynamic_{i+1}"
+            try:
+                # The config is already a dict, convert to ConfigTree
+                baseline_config = ConfigFactory.from_dict(dyn_baseline_config)
+
+                # Apply the same training and dataset config as the challenger
+                baseline_config.put("training", challenger_config.get("training"))
+                baseline_config.put("dataset", challenger_config.get("dataset"))
+
+                # Add metadata
+                baseline_config.put("experiment_name", baseline_exp_name)
+                baseline_config.put("race_id", race_id)
+                baseline_config.put("is_baseline_for", challenger_exp_name)
+
+                self._prepare_and_launch_exp(
+                    baseline_exp_name, baseline_config, "main.py"
+                )
+
+            except Exception as e:
+                failure_msg = f"• {baseline_exp_name}: {e}"
                 baseline_failures.append(failure_msg)
                 continue
 

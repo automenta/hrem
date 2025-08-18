@@ -1,14 +1,18 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSplitter, QMessageBox, QDialog, QTextEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QComboBox,
+    QHeaderView, QComboBox, QListWidget, QListWidgetItem, QDialogButtonBox,
 )
 from PyQt6.QtCore import Qt, QTimer
 import pyqtgraph as pg
 
+import json
+import csv
+from datetime import datetime
+from PyQt6.QtWidgets import QInputDialog, QFileDialog
 from .experiment_manager import ExperimentManager
 from .config_editor import ConfigEditor
-from .constants import RESULTS_DIR, STATUS_RUNNING
+from .constants import RESULTS_DIR, STATUS_RUNNING, RACES_DIR
 import os
 
 class RaceMonitor(QMainWindow):
@@ -25,7 +29,7 @@ class RaceMonitor(QMainWindow):
         self.participant_names = []
         self.plot_data_errors = {} # Will store {name: "error message"}
         self.available_metrics = []
-        self.current_metric = "test_loss" # Default metric
+        self.selected_metrics = ["test_loss"] # Default metric
 
         self._init_participants()
         self._init_ui()
@@ -44,10 +48,11 @@ class RaceMonitor(QMainWindow):
         if not self.available_metrics:
             self.available_metrics = ["test_loss", "train_loss"] # Default fallback
 
-        if "test_loss" in self.available_metrics:
-            self.current_metric = "test_loss"
-        elif self.available_metrics:
-            self.current_metric = self.available_metrics[0]
+        if not self.selected_metrics:
+            if "test_loss" in self.available_metrics:
+                self.selected_metrics = ["test_loss"]
+            elif self.available_metrics:
+                self.selected_metrics = [self.available_metrics[0]]
 
 
     def _init_ui(self):
@@ -61,12 +66,10 @@ class RaceMonitor(QMainWindow):
         top_bar_layout.addWidget(title)
         top_bar_layout.addStretch()
 
-        top_bar_layout.addWidget(QLabel("Plot Metric:"))
-        self.metric_selector = QComboBox()
-        self.metric_selector.addItems(self.available_metrics)
-        self.metric_selector.setCurrentText(self.current_metric)
-        self.metric_selector.currentTextChanged.connect(self._on_metric_changed)
-        top_bar_layout.addWidget(self.metric_selector)
+        top_bar_layout.addWidget(QLabel("Plot Metrics:"))
+        self.select_metrics_button = QPushButton("Select Metrics...")
+        self.select_metrics_button.clicked.connect(self._open_metric_selector)
+        top_bar_layout.addWidget(self.select_metrics_button)
         main_layout.addLayout(top_bar_layout)
 
 
@@ -79,6 +82,12 @@ class RaceMonitor(QMainWindow):
         for participant_name in self.participant_names[1:]:
             self._create_participant_plot(participant_name)
 
+        # Hyperparameter Table
+        self.hparam_table = QTableWidget()
+        self.hparam_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.hparam_table.verticalHeader().setVisible(False)
+        main_layout.addWidget(self.hparam_table)
+
         # Summary Table
         self.summary_table = QTableWidget()
         self.summary_table.setColumnCount(4)
@@ -88,7 +97,27 @@ class RaceMonitor(QMainWindow):
         self.summary_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         main_layout.addWidget(self.summary_table)
 
-        # Stop button
+        # --- Analysis Toolbar (initially hidden) ---
+        self.analysis_toolbar = QWidget()
+        analysis_layout = QHBoxLayout(self.analysis_toolbar)
+        analysis_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.add_conclusion_button = QPushButton("Add Conclusion")
+        self.add_conclusion_button.clicked.connect(self._add_conclusion)
+        self.save_plot_button = QPushButton("Save Summary Plot")
+        self.save_plot_button.clicked.connect(self._save_summary_plot)
+        self.export_summary_button = QPushButton("Export Summary CSV")
+        self.export_summary_button.clicked.connect(self._export_summary_data)
+
+        analysis_layout.addWidget(self.add_conclusion_button)
+        analysis_layout.addWidget(self.save_plot_button)
+        analysis_layout.addWidget(self.export_summary_button)
+        analysis_layout.addStretch()
+        main_layout.addWidget(self.analysis_toolbar)
+        self.analysis_toolbar.hide()
+
+
+        # Stop button / Close button
         self.stop_button = QPushButton("Stop Race")
         self.stop_button.clicked.connect(self._stop_race)
         main_layout.addWidget(self.stop_button)
@@ -145,9 +174,40 @@ class RaceMonitor(QMainWindow):
         self.timer.timeout.connect(self._update_race_status)
         self.timer.start(2000)  # Update every 2 seconds
 
-    def _on_metric_changed(self, new_metric: str):
-        """Handle the user selecting a new metric to plot."""
-        self.current_metric = new_metric
+    def _open_metric_selector(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Metrics to Plot")
+        layout = QVBoxLayout(dialog)
+
+        list_widget = QListWidget()
+        for metric in self.available_metrics:
+            item = QListWidgetItem(metric)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            check_state = Qt.CheckState.Checked if metric in self.selected_metrics else Qt.CheckState.Unchecked
+            item.setCheckState(check_state)
+            list_widget.addItem(item)
+
+        layout.addWidget(list_widget)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        if dialog.exec():
+            selected = []
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                if item.checkState() == Qt.CheckState.Checked:
+                    selected.append(item.text())
+            self._on_metrics_selected(selected)
+
+    def _on_metrics_selected(self, new_metrics: list[str]):
+        """Handle the user selecting new metrics to plot."""
+        if not new_metrics: # Don't allow unselecting everything
+            QMessageBox.warning(self, "Selection Error", "Please select at least one metric to plot.")
+            return
+        self.selected_metrics = new_metrics
         # Trigger a full update to redraw plots with the new metric
         self._update_race_status()
 
@@ -165,6 +225,7 @@ class RaceMonitor(QMainWindow):
 
             self.update_plot(name, results_data)
 
+        self._update_hyperparameter_table()
         self._update_summary(statuses)
 
         # Check if the race is finished
@@ -177,12 +238,9 @@ class RaceMonitor(QMainWindow):
                 self.stop_button.clicked.disconnect(self._stop_race)
             except TypeError:
                 pass # Already disconnected
-            try:
-                self.stop_button.clicked.disconnect(self.close)
-            except TypeError:
-                pass
             self.stop_button.clicked.connect(self.close)
             self.stop_button.setEnabled(True)
+            self.analysis_toolbar.show()
 
 
     def _update_summary(self, statuses: dict):
@@ -252,26 +310,186 @@ class RaceMonitor(QMainWindow):
         plot_widget.show()
         plot_widget.clear()
         plot_widget.setLabel('bottom', 'Epoch')
-        plot_widget.setLabel('left', self.current_metric)
-        plot_widget.setTitle(f"{self.current_metric} vs. Epoch")
-
+        plot_widget.setLabel('left', 'Metric Value')
+        plot_widget.setTitle(f"Metrics vs. Epoch")
+        plot_widget.addLegend()
 
         if not results_data:
-            plot_widget.addLegend() # Show legend even if empty
             return # No data to plot yet
 
-        # Generic plotting for the selected metric
-        metric_data = results_data.get(self.current_metric, [])
-        if metric_data:
-            plot_widget.plot(metric_data, pen='b', name=self.current_metric)
+        # Define a list of colors to cycle through for plotting
+        colors = ['b', 'g', 'r', 'c', 'm', 'y', 'w']
 
-        # Special handling for "loss" to also plot train_loss if available
-        if "loss" in self.current_metric and self.current_metric != "train_loss":
-            train_loss_data = results_data.get("train_loss", [])
-            if train_loss_data:
-                plot_widget.plot(train_loss_data, pen='r', name="train_loss")
+        for i, metric_name in enumerate(self.selected_metrics):
+            metric_data = results_data.get(metric_name, [])
+            if metric_data:
+                pen = pg.mkPen(color=colors[i % len(colors)], width=2)
+                plot_widget.plot(metric_data, pen=pen, name=metric_name)
 
-        plot_widget.addLegend()
+    def _update_hyperparameter_table(self):
+        """Compares participant configs and displays the differing hyperparameters."""
+        all_configs = {}
+        for name in self.participant_names:
+            config, err = self.manager.load_experiment_config(name)
+            if config and not err:
+                all_configs[name] = config
+
+        if len(all_configs) < 2:
+            self.hparam_table.hide()
+            return # No need to show table for one participant
+
+        diff_params = self._get_differentiating_hparams(all_configs)
+
+        if not diff_params:
+            self.hparam_table.hide()
+            return
+
+        self.hparam_table.show()
+        self.hparam_table.setRowCount(len(diff_params))
+        self.hparam_table.setColumnCount(len(self.participant_names))
+
+        self.hparam_table.setVerticalHeaderLabels(diff_params)
+        self.hparam_table.setHorizontalHeaderLabels(self.participant_names)
+
+        flat_configs = {name: self._flatten_dict(cfg) for name, cfg in all_configs.items()}
+
+        for row, param_key in enumerate(diff_params):
+            for col, p_name in enumerate(self.participant_names):
+                value = flat_configs.get(p_name, {}).get(param_key, "N/A")
+                self.hparam_table.setItem(row, col, QTableWidgetItem(str(value)))
+
+        self.hparam_table.resizeColumnsToContents()
+        self.hparam_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+
+    def _flatten_dict(self, d, parent_key='', sep='.'):
+        items = []
+        for k, v in d.items():
+            new_key = parent_key + sep + k if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self._flatten_dict(v, new_key, sep=sep).items())
+            else:
+                # Exclude non-essential keys
+                if new_key not in ["experiment_name", "race_id", "is_baseline_for", "notes", "parent_experiment"]:
+                    items.append((new_key, v))
+        return dict(items)
+
+    def _get_differentiating_hparams(self, all_configs: dict[str, dict]) -> list[str]:
+        """
+        Compares multiple configuration dictionaries and returns a list of keys
+        where the values are not all the same.
+        """
+        if not all_configs or len(all_configs) < 2:
+            return []
+
+        # Flatten all configs to handle nested dictionaries
+        flat_configs = {name: self._flatten_dict(cfg) for name, cfg in all_configs.items()}
+
+        # Get a set of all keys across all configs
+        all_keys = set()
+        for cfg in flat_configs.values():
+            all_keys.update(cfg.keys())
+
+        diff_keys = []
+        config_names = list(flat_configs.keys())
+
+        for key in sorted(list(all_keys)):
+            first_val = flat_configs[config_names[0]].get(key)
+            is_different = False
+            for i in range(1, len(config_names)):
+                current_val = flat_configs[config_names[i]].get(key)
+                if current_val != first_val:
+                    is_different = True
+                    break
+
+            if is_different:
+                diff_keys.append(key)
+
+        return diff_keys
+
+    def _get_race_summary_path(self):
+        """Gets the path for the race's summary file, creating the dir if needed."""
+        race_dir = os.path.join(RACES_DIR, self.race_info['base_name'])
+        os.makedirs(race_dir, exist_ok=True)
+        return os.path.join(race_dir, "race_summary.json")
+
+    def _add_conclusion(self):
+        summary_path = self._get_race_summary_path()
+
+        # Load existing summary data if it exists
+        try:
+            with open(summary_path, 'r') as f:
+                summary_data = json.load(f)
+        except (IOError, json.JSONDecodeError):
+            summary_data = {"race_name": self.race_info['base_name']}
+
+        current_conclusion = summary_data.get("conclusion", "")
+        conclusion, ok = QInputDialog.getMultiLineText(self, "Race Conclusion", "Enter your conclusion for this race:", current_conclusion)
+
+        if ok:
+            summary_data["conclusion"] = conclusion
+            summary_data["last_updated"] = datetime.now().isoformat()
+            try:
+                with open(summary_path, 'w') as f:
+                    json.dump(summary_data, f, indent=4)
+                QMessageBox.information(self, "Success", "Conclusion saved.")
+            except IOError as e:
+                QMessageBox.critical(self, "Error", f"Could not save conclusion:\n{e}")
+
+    def _save_summary_plot(self):
+        race_dir = os.path.join(RACES_DIR, self.race_info['base_name'])
+        os.makedirs(race_dir, exist_ok=True)
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Plot", race_dir, "PNG Image (*.png);;JPEG Image (*.jpg)"
+        )
+        if not path:
+            return
+
+        # This is a bit tricky since the plots are in separate widgets.
+        # For now, we'll just grab the first plot. A better implementation
+        # might combine the plots into a single image.
+        try:
+            first_participant = self.participant_names[0]
+            plot_widget = self.participant_widgets[first_participant]['plot']
+
+            # Use QPixmap to grab the widget's contents
+            pixmap = plot_widget.grab()
+            if pixmap.save(path):
+                QMessageBox.information(self, "Success", f"Plot saved to {os.path.basename(path)}")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save plot.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not save plot:\n{e}")
+
+    def _export_summary_data(self):
+        race_dir = os.path.join(RACES_DIR, self.race_info['base_name'])
+        os.makedirs(race_dir, exist_ok=True)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Summary", race_dir, "CSV files (*.csv)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, 'w', newline='') as f:
+                writer = csv.writer(f)
+
+                # Write header
+                header = [self.summary_table.horizontalHeaderItem(i).text() for i in range(self.summary_table.columnCount())]
+                writer.writerow(header)
+
+                # Write data rows
+                for row in range(self.summary_table.rowCount()):
+                    row_data = [self.summary_table.item(row, col).text() for col in range(self.summary_table.columnCount())]
+                    writer.writerow(row_data)
+
+            QMessageBox.information(self, "Success", f"Summary data exported to {os.path.basename(path)}")
+
+        except IOError as e:
+            QMessageBox.critical(self, "Error", f"Could not export summary:\n{e}")
+
 
     def _stop_race(self):
         for name in self.participant_names:

@@ -176,42 +176,53 @@ class ExperimentDashboard(QMainWindow):
                 )
 
     def view_race_monitor(self, race_base_name=None):
-        if not race_base_name:
-            exp_data = self.get_selected_experiment_data()
-            if not exp_data or exp_data.get("type") != "Race":
-                QMessageBox.warning(
-                    self, "Action Failed", "Please select a race participant to view its monitor."
-                )
-                return
-            # We need to reconstruct the race_info from the participant
-            # This is a simplification; a more robust way would be to store race metadata
-            race_base_name = exp_data["name"].replace("_challenger", "").replace("_baseline", "")
-
-        if race_base_name in self.race_monitors and self.race_monitors[race_base_name].isVisible():
-            self.race_monitors[race_base_name].activateWindow()
+        exp_data = self.get_selected_experiment_data()
+        if not exp_data:
             return
 
-        # Reconstruct race_info to pass to monitor
-        # This is a limitation we will address later. For now, we guess.
-        participants = [exp for exp in self.experiments_data if exp['name'].startswith(race_base_name)]
+        race_id = exp_data.get("race_id")
+        if not race_id or race_id == "N/A":
+            QMessageBox.warning(
+                self, "Action Failed", "Please select a race participant to view its monitor."
+            )
+            return
+
+        # Use race_id as the key for tracking monitor windows
+        if race_id in self.race_monitors and self.race_monitors[race_id].isVisible():
+            self.race_monitors[race_id].activateWindow()
+            return
+
+        # Reliably find all participants using the race_id
+        participants = [exp for exp in self.experiments_data if exp.get("race_id") == race_id]
+
         challenger = next((p for p in participants if "_challenger" in p['name']), None)
-        baselines = [p['model'] for p in participants if "_baseline" in p['name']]
+        if not challenger:
+            # Fallback for single experiment view if no challenger found
+            challenger = exp_data
+
+        # Baselines are all other participants in the race
+        baselines = [p['model'] for p in participants if p['name'] != challenger['name']]
+
+        # The base name is the common prefix
+        race_base_name = os.path.commonprefix([p['name'] for p in participants]).rstrip('_')
+
 
         if not challenger:
-            QMessageBox.critical(self, "Error", f"Could not find challenger for race '{race_base_name}'.")
+            QMessageBox.critical(self, "Error", f"Could not find a main participant for race ID '{race_id}'.")
             return
 
         race_info = {
             "base_name": race_base_name,
             "baselines": baselines,
-            "dataset": challenger['dataset']
+            "dataset": challenger['dataset'],
+            "race_id": race_id
         }
 
         monitor = RaceMonitor(race_info, self.manager)
         monitor.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         monitor.show()
-        self.race_monitors[race_base_name] = monitor
-        monitor.destroyed.connect(lambda: self.race_monitors.pop(race_base_name, None))
+        self.race_monitors[race_id] = monitor
+        monitor.destroyed.connect(lambda: self.race_monitors.pop(race_id, None))
 
     def rename_experiment(self):
         old_name = self.get_selected_experiment_name()
@@ -299,22 +310,40 @@ class ExperimentDashboard(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            # This is a placeholder for a real delete method in ExperimentManager
-            # For now, we assume it exists. We need to implement it in the manager.
-            # Let's assume a simple shutil.rmtree for now.
-            exp_path = os.path.join(self.manager.RESULTS_DIR, exp_name)
-            try:
-                import shutil
-                shutil.rmtree(exp_path)
-                success, message = True, f"Experiment '{exp_name}' deleted."
-            except Exception as e:
-                success, message = False, str(e)
-
+            success, message = self.manager.delete_single_experiment(exp_name)
             if success:
                 QMessageBox.information(self, "Success", message)
                 self.refresh_data()
             else:
                 QMessageBox.warning(self, "Deletion Failed", message)
+
+    def delete_race(self):
+        exp_data = self.get_selected_experiment_data()
+        if not exp_data:
+            return
+
+        race_id = exp_data.get("race_id")
+        if not race_id or race_id == "N/A":
+            QMessageBox.warning(self, "Action Failed", "This experiment is not part of a race.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Race Deletion",
+            f"Are you sure you want to permanently delete all experiments for race '{race_id}'?\n"
+            "This action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            success, message = self.manager.delete_race(race_id)
+            if success:
+                QMessageBox.information(self, "Success", message)
+                self.refresh_data()
+            else:
+                QMessageBox.warning(self, "Deletion Failed", message)
+
 
     def _create_context_menu(self, selected_data):
         """Creates and returns a context menu based on the selected item."""
@@ -328,9 +357,12 @@ class ExperimentDashboard(QMainWindow):
         menu.addSeparator()
 
         # Actions specific to experiment type
-        if selected_data.get("type") == "Race":
+        if selected_data.get("race_id") != "N/A":
             view_monitor_action = menu.addAction("View Race Monitor")
             view_monitor_action.triggered.connect(self.view_race_monitor)
+
+            delete_race_action = menu.addAction("Delete Race...")
+            delete_race_action.triggered.connect(self.delete_race)
             menu.addSeparator()
 
         # Actions available for non-running experiments
@@ -359,7 +391,7 @@ class ExperimentDashboard(QMainWindow):
             return
 
         exp_data = self.experiments_data[model_index.row()]
-        if exp_data.get("type") == "Race":
+        if exp_data.get("race_id") != "N/A":
             self.view_race_monitor()
         # Could add other double-click actions here, e.g., view logs for single experiments
 

@@ -18,11 +18,17 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QCheckBox,
     QInputDialog,
+    QFormLayout,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from .config_editor import ConfigEditor
-from .constants import CONFIGS_DIR, BASE_MODELS_DIR, BASE_DATASETS_DIR
+from .constants import (
+    CONFIGS_DIR,
+    BASE_MODELS_DIR,
+    BASE_DATASETS_DIR,
+    TRAINING_PROFILES_DIR,
+)
 
 class RaceLauncher(QDialog):
     """
@@ -90,15 +96,59 @@ class RaceLauncher(QDialog):
         baseline_group = QGroupBox("Race Against Baselines")
         baseline_layout = QVBoxLayout(baseline_group)
         self.baseline_list = QListWidget()
+        self.baseline_list.setToolTip("Select pre-defined baseline models to race against.")
         baseline_layout.addWidget(self.baseline_list)
+
+        # Add buttons for dynamic baselines
+        baseline_button_layout = QHBoxLayout()
+        self.add_dynamic_baseline_button = QPushButton("Edit & Add Baseline...")
+        self.add_dynamic_baseline_button.setToolTip("Create a new baseline for this race by editing a template.")
+        self.add_dynamic_baseline_button.clicked.connect(self._add_dynamic_baseline)
+        baseline_button_layout.addStretch()
+        baseline_button_layout.addWidget(self.add_dynamic_baseline_button)
+        baseline_layout.addLayout(baseline_button_layout)
+
         layout.addWidget(baseline_group)
 
+        # --- Initialize baselines ---
+        self.dynamic_baselines = {} # Will store name: config_dict
         available_baselines = self._get_available_config_names(BASE_MODELS_DIR)
         for baseline_name in available_baselines:
             item = QListWidgetItem(baseline_name)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Unchecked)
             self.baseline_list.addItem(item)
+
+        # --- Training Overrides ---
+        override_group = QGroupBox("Training Overrides (Optional)")
+        override_layout = QVBoxLayout(override_group)
+        override_form_layout = QFormLayout()
+
+        self.epochs_input = QLineEdit()
+        self.epochs_input.setPlaceholderText("e.g., 50")
+        self.batch_size_input = QLineEdit()
+        self.batch_size_input.setPlaceholderText("e.g., 64")
+        self.lr_input = QLineEdit()
+        self.lr_input.setPlaceholderText("e.g., 0.001")
+
+        override_form_layout.addRow("Epochs:", self.epochs_input)
+        override_form_layout.addRow("Batch Size:", self.batch_size_input)
+        override_form_layout.addRow("Learning Rate:", self.lr_input)
+        override_layout.addLayout(override_form_layout)
+
+        profile_button_layout = QHBoxLayout()
+        self.save_profile_button = QPushButton("Save Profile...")
+        self.save_profile_button.setToolTip("Save the current override settings as a profile for later use.")
+        self.save_profile_button.clicked.connect(self._save_training_profile)
+        self.load_profile_button = QPushButton("Load Profile...")
+        self.load_profile_button.setToolTip("Load override settings from a profile.")
+        self.load_profile_button.clicked.connect(self._load_training_profile)
+        profile_button_layout.addStretch()
+        profile_button_layout.addWidget(self.load_profile_button)
+        profile_button_layout.addWidget(self.save_profile_button)
+        override_layout.addLayout(profile_button_layout)
+        layout.addWidget(override_group)
+
 
         # --- Notes ---
         notes_group = QGroupBox("Notes")
@@ -188,6 +238,83 @@ class RaceLauncher(QDialog):
             else:
                 self.challenger_label.setText("Custom Config* (modified)")
 
+    def _save_training_profile(self):
+        os.makedirs(TRAINING_PROFILES_DIR, exist_ok=True)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Training Profile", TRAINING_PROFILES_DIR, "JSON files (*.json)"
+        )
+        if not path:
+            return
+
+        profile_data = {
+            "epochs": self.epochs_input.text(),
+            "batch_size": self.batch_size_input.text(),
+            "learning_rate": self.lr_input.text(),
+        }
+
+        try:
+            with open(path, "w") as f:
+                json.dump(profile_data, f, indent=4)
+            QMessageBox.information(self, "Success", f"Profile saved to {os.path.basename(path)}")
+        except IOError as e:
+            QMessageBox.critical(self, "Error", f"Could not save profile:\n{e}")
+
+    def _load_training_profile(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Training Profile", TRAINING_PROFILES_DIR, "JSON files (*.json)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r") as f:
+                profile_data = json.load(f)
+
+            self.epochs_input.setText(profile_data.get("epochs", ""))
+            self.batch_size_input.setText(profile_data.get("batch_size", ""))
+            self.lr_input.setText(profile_data.get("learning_rate", ""))
+            QMessageBox.information(self, "Success", f"Profile loaded from {os.path.basename(path)}")
+
+        except (json.JSONDecodeError, IOError) as e:
+            QMessageBox.critical(self, "Error", f"Could not load profile:\n{e}")
+
+    def _add_dynamic_baseline(self):
+        baselines = self._get_available_config_names(BASE_MODELS_DIR)
+        if not baselines:
+            QMessageBox.warning(self, "No Templates", "No baseline model configs found to use as templates.")
+            return
+
+        baseline_name, ok = QInputDialog.getItem(
+            self, "Create Dynamic Baseline", "Select a template:", baselines, 0, False
+        )
+
+        if ok and baseline_name:
+            template_path = os.path.join(BASE_MODELS_DIR, f"{baseline_name}.json")
+            try:
+                with open(template_path, "r") as f:
+                    config_data = json.load(f)
+
+                editor = ConfigEditor(config_data, self, is_read_only=False)
+                editor.setWindowTitle(f"New Baseline (from {baseline_name})")
+                if editor.exec():
+                    new_config = editor.get_config()
+                    # Create a unique name for the dynamic baseline
+                    dynamic_name = f"{baseline_name}_dynamic_{len(self.dynamic_baselines) + 1}"
+                    self.dynamic_baselines[dynamic_name] = new_config
+
+                    # Add it to the list widget and check it by default
+                    item = QListWidgetItem(dynamic_name)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setCheckState(Qt.CheckState.Checked)
+                    item.setToolTip("This is a dynamically generated baseline for this race.")
+                    self.baseline_list.addItem(item)
+
+            except (json.JSONDecodeError, IOError) as e:
+                QMessageBox.critical(
+                    self, "Error Reading Template", f"Could not read or parse the template file:\n{e}"
+                )
+
+
     def _get_available_config_names(self, directory):
         """Scans a directory for available JSON configuration files."""
         names = []
@@ -228,13 +355,18 @@ class RaceLauncher(QDialog):
             )
             return
 
-        baselines = []
+        standard_baselines = []
+        dynamic_baselines = []
         for i in range(self.baseline_list.count()):
             item = self.baseline_list.item(i)
             if item.checkState() == Qt.CheckState.Checked:
-                baselines.append(item.text())
+                baseline_name = item.text()
+                if baseline_name in self.dynamic_baselines:
+                    dynamic_baselines.append(self.dynamic_baselines[baseline_name])
+                else:
+                    standard_baselines.append(baseline_name)
 
-        if not baselines:
+        if not standard_baselines and not dynamic_baselines:
             QMessageBox.warning(
                 self,
                 "Validation Error",
@@ -242,17 +374,43 @@ class RaceLauncher(QDialog):
             )
             return
 
+        # --- Collect Training Overrides ---
+        training_overrides = {}
+        try:
+            epochs = self.epochs_input.text().strip()
+            if epochs:
+                training_overrides["epochs"] = int(epochs)
+
+            batch_size = self.batch_size_input.text().strip()
+            if batch_size:
+                training_overrides["batch_size"] = int(batch_size)
+
+            lr = self.lr_input.text().strip()
+            if lr:
+                training_overrides["learning_rate"] = float(lr)
+
+        except ValueError as e:
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                f"Invalid number in training overrides:\n{e}",
+            )
+            return
+
         launch_info = {
             "type": "Challenge",
             "base_name": name,
-            "challenger_config": self.challenger_config_data, # Pass the dict directly
-            "baselines": baselines,
+            "challenger_config": self.challenger_config_data,  # Pass the dict directly
+            "standard_baselines": standard_baselines,
+            "dynamic_baselines": dynamic_baselines,
             "dataset": selected_dataset,
         }
+        if training_overrides:
+            launch_info["training_overrides"] = training_overrides
 
         notes = self.notes_editor.toPlainText().strip()
         if notes:
-             launch_info["notes"] = notes
+            launch_info["notes"] = notes
 
         self.launch_info = launch_info
         self.launch_info_ready.emit(launch_info)

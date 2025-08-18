@@ -92,7 +92,7 @@ def test_launch_experiment_race(mock_launch, temp_experiment_dirs):
     launch_info = {
         "challenger_config": challenger_config_path,
         "base_name": "my_race",
-        "baselines": ["lstm"],
+            "standard_baselines": ["lstm"],
         "dataset": "test_dataset",
     }
 
