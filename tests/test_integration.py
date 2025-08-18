@@ -102,11 +102,13 @@ def test_full_experiment_lifecycle(mock_popen, temp_integration_env):
     assert success, f"Failed to launch single experiment: {msg}"
 
     # --- 2. Launch a challenge/race ---
+    with open(temp_integration_env["challenger_config_path"], "r") as f:
+        challenger_config = json.load(f)
     launch_info = {
-        "challenger_config": str(temp_integration_env["challenger_config_path"]),
+        "challenger_config": challenger_config,
         "base_name": "my_race",
-            "standard_baselines": ["baseline"],
-        "dataset": "test_dataset",  # Added dataset for the race
+        "standard_baselines": ["baseline"],
+        "training_overrides": {"epochs": 1},
     }
     success, msg = manager.launch_experiment_race(launch_info)
     assert success, f"Failed to launch experiment race: {msg}"

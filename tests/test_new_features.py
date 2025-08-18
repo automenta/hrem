@@ -88,12 +88,13 @@ def test_launch_experiment_race(mock_launch, temp_experiment_dirs):
     manager = ExperimentManager()
 
     challenger_config_path = os.path.join(results_dir, "exp1", "config.json")
+    with open(challenger_config_path, "r") as f:
+        challenger_config = json.load(f)
 
     launch_info = {
-        "challenger_config": challenger_config_path,
+        "challenger_config": challenger_config,
         "base_name": "my_race",
-            "standard_baselines": ["lstm"],
-        "dataset": "test_dataset",
+        "standard_baselines": ["lstm"],
     }
 
     success, msg = manager.launch_experiment_race(launch_info)

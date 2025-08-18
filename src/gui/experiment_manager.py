@@ -543,42 +543,23 @@ class ExperimentManager(BaseProcessManager):
         base_name = launch_info["base_name"]
         challenger_config = launch_info["challenger_config"]
         standard_baselines = launch_info.get("standard_baselines", [])
-        dynamic_baselines = launch_info.get("dynamic_baselines", [])
-        dataset_name = launch_info["dataset"]
         training_overrides = launch_info.get("training_overrides")
         notes = launch_info.get("notes")
         baseline_failures = []
 
-        # 1. Load common dataset config
+        # 1. Load and configure challenger
         try:
-            dataset_config_path = os.path.join(
-                BASE_DATASETS_DIR, f"{dataset_name}.json"
-            )
-            dataset_config = ConfigFactory.parse_file(dataset_config_path)
-        except Exception as e:
-            return False, f"Failed to load dataset config '{dataset_name}': {e}"
-
-        # 2. Load and configure challenger
-        try:
-            if isinstance(challenger_config, dict):
-                # Config is already a dictionary (from ConfigEditor)
-                challenger_config = ConfigFactory.from_dict(challenger_config)
-            else:
-                # Assume it's a file path
-                challenger_config = ConfigFactory.parse_file(challenger_config)
+            # The config is already a dictionary from the RaceLauncherDialog
+            challenger_config = ConfigFactory.from_dict(challenger_config)
         except Exception as e:
             return False, f"Failed to load or parse challenger config: {e}"
 
-        # --- Apply overrides to the main challenger config ---
-        # a. Set the dataset
-        challenger_config.put("dataset", dataset_config)
-
-        # b. Apply training overrides
+        # --- Apply training overrides to the main challenger config ---
         if training_overrides:
             override_config = ConfigFactory.from_dict({"training": training_overrides})
             challenger_config = override_config.with_fallback(challenger_config)
 
-        # 3. Launch challenger experiment
+        # 2. Launch challenger experiment
         challenger_exp_name = f"{base_name}_challenger"
         challenger_config.put("experiment_name", challenger_exp_name)
         challenger_config.put("race_id", race_id)
@@ -590,7 +571,7 @@ class ExperimentManager(BaseProcessManager):
         except Exception as e:
             return False, f"Failed to launch challenger '{challenger_exp_name}': {e}"
 
-        # 4. Prepare and launch standard baseline experiments
+        # 3. Prepare and launch standard baseline experiments
         for baseline_model_name in standard_baselines:
             baseline_exp_name = f"{base_name}_baseline_{baseline_model_name}"
             try:
@@ -618,32 +599,6 @@ class ExperimentManager(BaseProcessManager):
 
             except Exception as e:
                 failure_msg = f"• {baseline_model_name}: {e}"
-                baseline_failures.append(failure_msg)
-                continue
-
-        # 5. Prepare and launch dynamic baseline experiments
-        for i, dyn_baseline_config in enumerate(dynamic_baselines):
-            model_name = dyn_baseline_config.get("model", {}).get("name", "unknown")
-            baseline_exp_name = f"{base_name}_baseline_{model_name}_dynamic_{i+1}"
-            try:
-                # The config is already a dict, convert to ConfigTree
-                baseline_config = ConfigFactory.from_dict(dyn_baseline_config)
-
-                # Apply the same training and dataset config as the challenger
-                baseline_config.put("training", challenger_config.get("training"))
-                baseline_config.put("dataset", challenger_config.get("dataset"))
-
-                # Add metadata
-                baseline_config.put("experiment_name", baseline_exp_name)
-                baseline_config.put("race_id", race_id)
-                baseline_config.put("is_baseline_for", challenger_exp_name)
-
-                self._prepare_and_launch_exp(
-                    baseline_exp_name, baseline_config, "main.py"
-                )
-
-            except Exception as e:
-                failure_msg = f"• {baseline_exp_name}: {e}"
                 baseline_failures.append(failure_msg)
                 continue
 

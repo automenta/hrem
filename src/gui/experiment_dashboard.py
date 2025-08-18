@@ -28,7 +28,7 @@ from PyQt6.QtGui import QAction, QKeySequence, QColor
 import pyqtgraph as pg
 
 from .experiment_manager import ExperimentManager
-from .race_launcher import RaceLauncher
+from .race_launcher_dialog import RaceLauncherDialog
 from .race_monitor import RaceMonitor
 from .reusable_dialogs import InputDialog
 from .utils import flatten_dict
@@ -423,22 +423,30 @@ class ExperimentDashboard(QMainWindow):
     # --- Actions ---
 
     def launch_new_race(self):
-        launcher = RaceLauncher(self)
-        # The launcher will emit a signal that the main app connects to
-        # For now, we can handle it directly for simplicity
+        launcher = RaceLauncherDialog(self)
         if launcher.exec():
-            launch_info = launcher.launch_info
+            launch_info = launcher.get_launch_info()
+            if not launch_info: # Should not happen if dialog is accepted, but as a safeguard
+                return
+
             success, result = self.manager.launch_experiment_race(launch_info)
             if success:
+                # Format the baseline failures for better readability
+                failure_list = "\n".join(result) if result else "None"
                 QMessageBox.information(
                     self,
                     "Race Launched",
                     f"Successfully launched race '{launch_info['base_name']}'.\n\n"
-                    f"Baseline failures (if any):\n{result or 'None'}",
+                    f"Baseline failures:\n{failure_list}",
                 )
                 self.refresh_data()
-                # Automatically open the monitor for the new race
-                self.view_race_monitor(launch_info["base_name"])
+                # Automatically open the monitor for the new race.
+                # We need to find one of the new experiments to get the race_id.
+                # The challenger is a good candidate.
+                challenger_name = f"{launch_info['base_name']}_challenger"
+                self.select_experiment_by_name(challenger_name)
+                self.view_race_monitor()
+
             else:
                 QMessageBox.critical(
                     self, "Race Launch Failed", f"Could not launch race.\n\nReason: {result}"

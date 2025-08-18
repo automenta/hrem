@@ -46,7 +46,7 @@ class RaceLauncherDialog(QDialog):
         challenger_buttons = QHBoxLayout()
         new_button = QPushButton("New from Template...")
         select_button = QPushButton("Select from File...")
-        self.edit_button = QPushButton("Edit Model...")
+        self.edit_button = QPushButton("Edit Config...")
         self.edit_button.setEnabled(False)
         challenger_buttons.addWidget(new_button)
         challenger_buttons.addWidget(select_button)
@@ -116,26 +116,39 @@ class RaceLauncherDialog(QDialog):
             QMessageBox.warning(self, "No Templates", "No baseline model configs found.")
             return
 
-        baseline_name, ok = QInputDialog.getItem(self, "Create New Challenger", "Select a template:", baselines, 0, False)
+        baseline_name, ok = QInputDialog.getItem(self, "Create New Challenger", "Select a model template:", baselines, 0, False)
         if ok and baseline_name:
             template_path = os.path.join(BASE_MODELS_DIR, f"{baseline_name}.json")
             try:
                 with open(template_path, "r") as f:
-                    config_data = json.load(f)
+                    model_config_data = json.load(f)
 
-                # We only want to edit the model part
-                editor = ConfigEditor(
-                    {"model": config_data.get("model", {})},
-                    self,
-                    visible_sections=["model"]
-                )
+                # Create a full, new config from the model template
+                new_config = {
+                    "experiment_name": "new_challenger_config",
+                    "model": model_config_data,
+                    "dataset": {"name": "", "params": {}},
+                    "training": {
+                        "epochs": 20,
+                        "batch_size": 32,
+                        "learning_rate": 0.001
+                    }
+                }
+
+                editor = ConfigEditor(new_config, self) # Edit the full config
                 editor.setWindowTitle(f"New Challenger (from {baseline_name})")
 
                 if editor.exec():
-                    # The editor returns a full config, but we only care about the model part
-                    self.challenger_config_data = editor.get_config().get("model", {})
+                    self.challenger_config_data = editor.get_config()
                     self.challenger_label.setText("Unsaved Custom Challenger*")
                     self.edit_button.setEnabled(True)
+                    # Update the dataset selector to reflect the new config
+                    dataset_name = self.challenger_config_data.get("dataset", {}).get("name")
+                    if dataset_name:
+                        idx = self.dataset_selector.findText(dataset_name)
+                        if idx != -1:
+                            self.dataset_selector.setCurrentIndex(idx)
+
             except (json.JSONDecodeError, IOError) as e:
                 QMessageBox.critical(self, "Error Reading Template", f"Could not read template: {e}")
 
@@ -144,14 +157,18 @@ class RaceLauncherDialog(QDialog):
         if path:
             try:
                 with open(path, "r") as f:
-                    # We only care about the "model" part of the config file.
-                    full_config = json.load(f)
-                    self.challenger_config_data = full_config.get("model")
-                    if not self.challenger_config_data:
-                        raise ValueError("Config file does not contain a 'model' section.")
+                    # Load the entire configuration.
+                    self.challenger_config_data = json.load(f)
                 self.challenger_label.setText(os.path.basename(path))
                 self.edit_button.setEnabled(True)
-            except (json.JSONDecodeError, IOError, ValueError) as e:
+                # Update the dataset selector to reflect the loaded config
+                dataset_name = self.challenger_config_data.get("dataset", {}).get("name")
+                if dataset_name:
+                    idx = self.dataset_selector.findText(dataset_name)
+                    if idx != -1:
+                        self.dataset_selector.setCurrentIndex(idx)
+
+            except (json.JSONDecodeError, IOError) as e:
                 QMessageBox.critical(self, "Error Reading Config", f"Could not read config: {e}")
                 self.challenger_config_data = None
                 self.challenger_label.setText("No challenger configuration loaded.")
@@ -162,15 +179,20 @@ class RaceLauncherDialog(QDialog):
             return
 
         editor = ConfigEditor(
-            {"model": self.challenger_config_data},
-            self,
-            visible_sections=["model"]
+            self.challenger_config_data,
+            self
         )
-        editor.setWindowTitle("Edit Challenger Model")
+        editor.setWindowTitle("Edit Challenger Config")
 
         if editor.exec():
-            self.challenger_config_data = editor.get_config().get("model", {})
+            self.challenger_config_data = editor.get_config()
             self.challenger_label.setText(f"{self.challenger_label.text().split('*')[0]}* (modified)")
+            # Update the dataset selector to reflect the edited config
+            dataset_name = self.challenger_config_data.get("dataset", {}).get("name")
+            if dataset_name:
+                idx = self.dataset_selector.findText(dataset_name)
+                if idx != -1:
+                    self.dataset_selector.setCurrentIndex(idx)
 
     def on_accept(self):
         # --- Validation ---
@@ -185,18 +207,12 @@ class RaceLauncherDialog(QDialog):
 
         dataset = self.dataset_selector.currentText()
         if not dataset:
-            QMessageBox.warning(self, "Validation Error", "A dataset must be selected.")
+            QMessageBox.warning(self, "Validation Error", "A dataset must be selected for the race.")
             return
 
         selected_baselines = [self.baseline_list.item(i).text() for i in range(self.baseline_list.count()) if self.baseline_list.item(i).checkState() == Qt.CheckState.Checked]
 
-        # --- Build Launch Info ---
-        challenger_full_config = {
-            "model": self.challenger_config_data,
-            "dataset": {"name": dataset, "params": {}},
-            "training": {} # Will be populated by overrides
-        }
-
+        # --- Training Overrides ---
         training_overrides = {}
         try:
             if self.epochs_input.text().strip(): training_overrides["epochs"] = int(self.epochs_input.text())
@@ -206,14 +222,17 @@ class RaceLauncherDialog(QDialog):
             QMessageBox.critical(self, "Validation Error", f"Invalid number in training overrides: {e}")
             return
 
+        # --- Final Challenger Config ---
+        # The user can select a dataset that overrides what's in the challenger config file.
+        final_challenger_config = self.challenger_config_data.copy()
+        final_challenger_config["dataset"] = {"name": dataset, "params": {}}
+
+        # --- Build Launch Info ---
         self.launch_info = {
-            "type": "Challenge",
             "base_name": race_name,
             "notes": self.notes_editor.toPlainText().strip(),
-            "challenger_config": challenger_full_config,
+            "challenger_config": final_challenger_config,
             "standard_baselines": selected_baselines,
-            "dynamic_baselines": [],
-            "dataset": dataset, # Redundant but kept for manager compatibility
             "training_overrides": training_overrides
         }
 
