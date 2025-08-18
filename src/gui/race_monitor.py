@@ -8,7 +8,7 @@ import pyqtgraph as pg
 
 from .experiment_manager import ExperimentManager
 from .config_editor import ConfigEditor
-from .constants import RESULTS_DIR
+from .constants import RESULTS_DIR, STATUS_RUNNING
 import os
 
 class RaceMonitor(QMainWindow):
@@ -119,6 +119,8 @@ class RaceMonitor(QMainWindow):
 
     def _update_race_status(self):
         self.manager.update_log_files()
+        statuses = self.manager.get_statuses()
+
         for name in self.participant_names:
             results_data, error_msg = self.manager.load_experiment_results(name)
 
@@ -129,12 +131,29 @@ class RaceMonitor(QMainWindow):
 
             self.update_plot(name, results_data)
 
-        self._update_summary()
+        self._update_summary(statuses)
 
-    def _update_summary(self):
+        # Check if the race is finished
+        is_race_running = any(statuses.get(name) == STATUS_RUNNING for name in self.participant_names)
+
+        if not is_race_running:
+            self.timer.stop()
+            self.stop_button.setText("Close")
+            try:
+                self.stop_button.clicked.disconnect(self._stop_race)
+            except TypeError:
+                pass # Already disconnected
+            try:
+                self.stop_button.clicked.disconnect(self.close)
+            except TypeError:
+                pass
+            self.stop_button.clicked.connect(self.close)
+            self.stop_button.setEnabled(True)
+
+
+    def _update_summary(self, statuses: dict):
         """Analyzes the current race data and updates the summary table."""
         self.summary_table.setRowCount(len(self.participant_names))
-        statuses = self.manager.get_statuses()
 
         all_losses = {}
         for i, name in enumerate(self.participant_names):
@@ -218,7 +237,9 @@ class RaceMonitor(QMainWindow):
         self.stop_button.setText("Race Stopped")
 
     def closeEvent(self, event):
-        self._stop_race()
+        # Only stop processes if they are still running
+        if self.timer.isActive():
+            self._stop_race()
         super().closeEvent(event)
 
     def _view_config(self, experiment_name: str):

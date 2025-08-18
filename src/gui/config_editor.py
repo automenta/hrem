@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QCheckBox,
     QDialogButtonBox,
+    QMessageBox,
 )
 from PyQt6.QtCore import pyqtSignal
 
@@ -77,7 +78,7 @@ class ConfigEditor(QDialog):
 
         # --- Dialog Buttons ---
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.button_box.accepted.connect(self.accept)
+        self.button_box.accepted.connect(self._on_accept)
         self.button_box.rejected.connect(self.reject)
         main_layout.addWidget(self.button_box)
 
@@ -145,56 +146,109 @@ class ConfigEditor(QDialog):
 
                 layout.addRow(f"{name}:", widget)
 
-    def get_config(self) -> dict:
+    def _on_accept(self):
+        """Handle the OK button click, performing validation first."""
+        if self._validate_config():
+            self.accept()
+
+    def _validate_and_build_config(self):
+        """
+        Builds the config dict from the UI while validating field types.
+        Raises ValueError on failure.
+        """
         config = {
             "model": {"name": self.model_combo.currentText(), "params": {}},
             "dataset": {"name": self.dataset_combo.currentText(), "params": {}},
             "training": {},
         }
 
-        self._get_params_from_layout(
-            self.model_params_layout, config["model"]["params"]
+        # Validate Model
+        model_class = MODEL_REGISTRY.get(config["model"]["name"])
+        config["model"]["params"] = self._build_validated_params(
+            "Model", self.model_params_layout, model_class
         )
-        self._get_params_from_layout(
-            self.dataset_params_layout, config["dataset"]["params"]
+
+        # Validate Dataset
+        dataset_class = DATASET_REGISTRY.get(config["dataset"]["name"])
+        config["dataset"]["params"] = self._build_validated_params(
+            "Dataset", self.dataset_params_layout, dataset_class
         )
-        self._get_params_from_layout(self.training_params_layout, config["training"])
+
+        # Validate Training - manually since it's not dynamic
+        try:
+            training_params = {}
+            epochs_text = self.training_params_layout.itemAt(1).widget().text()
+            training_params["epochs"] = int(epochs_text)
+            batch_text = self.training_params_layout.itemAt(3).widget().text()
+            training_params["batch_size"] = int(batch_text)
+            lr_text = self.training_params_layout.itemAt(5).widget().text()
+            training_params["learning_rate"] = float(lr_text)
+            config["training"] = training_params
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid value in Training section: {e}") from e
 
         return config
 
-    def _get_params_from_layout(self, layout, config_dict):
-        for i in range(0, layout.count(), 2):
-            label_item = layout.itemAt(i)
-            field_item = layout.itemAt(i + 1)
-            if (
-                label_item
-                and label_item.widget()
-                and field_item
-                and field_item.widget()
-            ):
-                label_widget = label_item.widget()
-                field_widget = field_item.widget()
-                key = label_widget.text().replace(":", "").lower().replace(" ", "_")
-                config_dict[key] = self._get_widget_value(field_widget)
+
+    def _build_validated_params(self, section_name, layout, component_class):
+        params_dict = {}
+        if not component_class:
+            return params_dict
+
+        sig = inspect.signature(component_class.__init__)
+        param_defs = sig.parameters
+
+        for i in range(layout.rowCount()):
+            label_widget = layout.itemAt(i, QFormLayout.ItemRole.LabelRole).widget()
+            field_widget = layout.itemAt(i, QFormLayout.ItemRole.FieldRole).widget()
+
+            param_name_text = label_widget.text().replace(":", "")
+            param_name_key = param_name_text.lower().replace(" ", "_")
+
+            if param_name_key not in param_defs:
+                continue
+
+            param_def = param_defs[param_name_key]
+            expected_type = param_def.annotation if param_def.annotation is not inspect.Parameter.empty else type(param_def.default)
+
+            value = self._get_widget_value(field_widget)
+
+            if value is None: continue # Should not happen with validation
+
+            try:
+                if isinstance(value, str):
+                    if expected_type is bool: # Should be a checkbox, but handle anyway
+                        value = value.lower() in ["true", "1", "yes"]
+                    elif expected_type is int:
+                        value = int(value)
+                    elif expected_type is float:
+                        value = float(value)
+                params_dict[param_name_key] = value
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"Invalid value for '{param_name_text}' in {section_name}.\n"
+                    f"Expected a {expected_type.__name__}, but got '{value}'."
+                ) from e
+
+        return params_dict
+
+    def _on_accept(self):
+        """Handle the OK button click, performing validation first."""
+        try:
+            self.config = self._validate_and_build_config()
+            self.accept()
+        except ValueError as e:
+            QMessageBox.warning(self, "Validation Error", str(e))
+
+    def get_config(self) -> dict:
+        return self.config
 
     def _get_widget_value(self, widget):
+        """Gets the raw value from a widget without type conversion."""
         if isinstance(widget, QCheckBox):
             return widget.isChecked()
         if isinstance(widget, QLineEdit):
-            text = widget.text()
-            # Try to convert to number if possible
-            try:
-                return int(text)
-            except ValueError:
-                try:
-                    return float(text)
-                except ValueError:
-                    # Handle lists/tuples
-                    if text.startswith("(") and text.endswith(")"):
-                        return tuple(map(int, text[1:-1].split(",")))
-                    if text.startswith("[") and text.endswith("]"):
-                        return list(map(int, text[1:-1].split(",")))
-                    return text  # It's just a string
+            return widget.text()
         return None
 
     def set_config(self, config: dict):

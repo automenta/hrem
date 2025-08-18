@@ -4,17 +4,22 @@ This repository provides a robust and extensible framework for evaluating Hierar
 
 ## Features
 
+### Core Framework Features
+
 - **Modular Models**: Easily extendable model architecture, with `MLP`, `HRM`, and a modular `HREM` (for ablation studies) included.
 - **Flexible Datasets**: Support for multiple tasks, with the sequence reversal task and a character-level language modeling task implemented.
 - **Configuration-Driven**: All experiments are defined in simple JSON files, ensuring perfect reproducibility.
 - **Robust Training Engine**: A `Trainer` class that handles device management, training, evaluation, logging, and model checkpointing.
 - **Automated Testing**: A full suite of unit tests with `pytest` and a CI pipeline with GitHub Actions to ensure code quality.
 - **Advanced Hyperparameter Search**: Integrated support for `Optuna` to automate the search for optimal hyperparameters.
-- **Interactive GUI for Experiment-Driven Development**: A PyQt6-based GUI designed to manage, visualize, and analyze experiments. The GUI is built to support an intuitive, semi-autonomous workflow for exploring hyperparameter spaces and model architectures. Key GUI features include:
-    - **Paired Experiment Racing**: Launch a 'challenger' model against one or more 'baseline' models. The framework automatically generates matched configurations for a fair, head-to-head comparison on performance and efficiency metrics (parameter count, epoch time).
-    - **Research Tree Visualization**: A graph-based view to track the lineage of your experiments, making it easy to see the evolution from one idea to the next.
-    - **N-Dimensional Analysis**: A powerful scatter plot view that allows you to visualize all your experiments across different hyperparameters and results. Visually identify trends, outliers, and Pareto frontiers.
 - **Comprehensive Analysis**: Tools for both programmatic and interactive analysis of results.
+
+### GUI Features
+
+The current version of the GUI provides a complete workflow for **Experiment Racing**. This includes:
+- **Race Launcher**: A dedicated dialog to configure and launch a "race," pitting a challenger model against one or more baselines under identical conditions.
+- **Configuration Editor**: An integrated tool to view or make temporary, in-memory modifications to a challenger's configuration before launching a race. The editor validates inputs to prevent configuration errors.
+- **Live Race Monitor**: A dashboard that provides a live, side-by-side comparison of all race participants, with real-time plots of training/testing loss, and access to configurations and logs.
 
 ## Project Structure
 
@@ -114,11 +119,11 @@ The **Race Monitor** provides a live look at the experiments as they run.
 - A summary table at the bottom shows the live status, latest test loss, and notes (e.g., "Winning", "Losing") for all participants.
 - Closing the Race Monitor window will stop all associated training processes.
 
-## Roadmap & Future Vision
+## GUI Roadmap & Future Vision
 
-The current GUI provides a robust workflow for launching and monitoring head-to-head experiment races. Our long-term vision is to expand this into a comprehensive Experiment Management System with features like:
+The current GUI provides a robust workflow for launching and monitoring head-to-head experiment races. Our long-term vision is to expand this into a comprehensive Experiment Management System. The following features are planned for future releases:
 
-- **Mission Control**: A main dashboard to view, filter, sort, and manage all past experiments (cloning, archiving, deleting).
+- **Mission Control**: A main dashboard to view, filter, sort, and manage all past experiments (e.g., cloning, archiving, deleting).
 - **Research Tree**: A graph-based view to track the lineage of your experiments, making it easy to see the evolution from one idea to the next.
 - **N-Dimensional Analysis**: A powerful scatter plot view that allows you to visualize all your experiments across different hyperparameters and results to visually identify trends, outliers, and Pareto frontiers.
 

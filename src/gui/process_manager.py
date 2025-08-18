@@ -1,4 +1,3 @@
-import fcntl
 import os
 import subprocess
 import sys
@@ -45,10 +44,12 @@ class BaseProcessManager:
             stderr=subprocess.STDOUT,  # Redirect stderr to stdout
         )
 
-        # Set stdout to be non-blocking
-        fd = process.stdout.fileno()
-        fl = fcntl.fcntl(fd, fcntl.F_GETFL)
-        fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+        # Set stdout to be non-blocking on Unix-like systems
+        if sys.platform != "win32":
+            import fcntl
+            fd = process.stdout.fileno()
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
         self.processes[name] = (process, log_path)
         return name

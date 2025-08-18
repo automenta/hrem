@@ -1,4 +1,5 @@
 import os
+import re
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -165,6 +166,14 @@ import json
         name = self.name_input.text().strip()
         if not name:
             QMessageBox.warning(self, "Validation Error", "Race Name cannot be empty.")
+            return
+
+        if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Race Name can only contain letters, numbers, underscores, and hyphens.",
+            )
             return
 
         if not self.challenger_config_data:
