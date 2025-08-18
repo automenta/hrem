@@ -32,7 +32,9 @@ from .race_launcher import RaceLauncher
 from .race_monitor import RaceMonitor
 from .reusable_dialogs import InputDialog
 from .utils import flatten_dict
-from .constants import STATUS_RUNNING, STATUS_FAILED, STATUS_COMPLETED
+from .log_viewer import LogViewer
+from .archive_browser import ArchiveBrowser
+from .constants import STATUS_RUNNING, STATUS_FAILED, STATUS_COMPLETED, STATUS_ERROR
 from .styles import PALETTE
 
 
@@ -68,6 +70,8 @@ class ExperimentDashboard(QMainWindow):
         self.all_experiments_data = [] # Holds all data from the manager
         self.experiments_data = [] # Holds the filtered and sorted data to be displayed
         self.race_monitors = {}  # To track open race monitor windows
+        self.log_viewers = {} # To track open log viewer windows
+        self.archive_browser = None # To track the archive browser window
 
         # --- UI ---
         self._init_ui()
@@ -87,10 +91,14 @@ class ExperimentDashboard(QMainWindow):
         self.launch_race_button = QPushButton(" Launch New Race")
         self.launch_race_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.launch_race_button.clicked.connect(self.launch_new_race)
+        self.archive_button = QPushButton(" Archive")
+        self.archive_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirLinkIcon))
+        self.archive_button.clicked.connect(self.open_archive_browser)
         self.refresh_button = QPushButton(" Refresh")
         self.refresh_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
         self.refresh_button.clicked.connect(self.refresh_data)
         action_layout.addWidget(self.launch_race_button)
+        action_layout.addWidget(self.archive_button)
         action_layout.addStretch()
         action_layout.addWidget(self.refresh_button)
         layout.addLayout(action_layout)
@@ -104,7 +112,7 @@ class ExperimentDashboard(QMainWindow):
         filter_box.addWidget(self.name_filter_input)
 
         self.status_filter_combo = QComboBox()
-        self.status_filter_combo.addItems(["All", STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED])
+        self.status_filter_combo.addItems(["All", STATUS_RUNNING, STATUS_COMPLETED, STATUS_FAILED, STATUS_ERROR])
         self.status_filter_combo.currentIndexChanged.connect(self._apply_filters)
         filter_box.addWidget(QLabel("Status:"))
         filter_box.addWidget(self.status_filter_combo)
@@ -327,9 +335,16 @@ class ExperimentDashboard(QMainWindow):
                     color = PALETTE["accent_red"]
                 elif status_text == STATUS_COMPLETED:
                     color = PALETTE["accent_green"]
+                elif status_text == STATUS_ERROR:
+                    color = PALETTE["accent_orange"]
 
                 if color:
                     status_item.setBackground(QColor(color))
+
+                # Add a tooltip for error messages
+                error_message = exp_data.get("error_message")
+                if error_message:
+                    status_item.setToolTip(error_message)
 
 
         self.table.setSortingEnabled(True)
@@ -648,6 +663,9 @@ class ExperimentDashboard(QMainWindow):
 
         clone_action = menu.addAction("Clone...")
         clone_action.triggered.connect(self.clone_experiment)
+
+        menu.addAction("View Logs").triggered.connect(self.view_experiment_logs)
+
         menu.addSeparator()
 
         # --- Stop Actions ---
@@ -881,9 +899,41 @@ class ExperimentDashboard(QMainWindow):
         else:
             self.analysis_plot_text.hide()
 
+    def view_experiment_logs(self):
+        exp_data = self.get_selected_experiment_data()
+        if not exp_data:
+            return
+
+        exp_name = exp_data["name"]
+        if exp_name in self.log_viewers and self.log_viewers[exp_name].isVisible():
+            self.log_viewers[exp_name].activateWindow()
+            return
+
+        log_viewer = LogViewer(self.manager, exp_name, self)
+        log_viewer.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        log_viewer.show()
+        self.log_viewers[exp_name] = log_viewer
+        log_viewer.destroyed.connect(lambda: self.log_viewers.pop(exp_name, None))
+
+
+    def open_archive_browser(self):
+        if self.archive_browser is None or not self.archive_browser.isVisible():
+            self.archive_browser = ArchiveBrowser(self.manager, self)
+            # When the archive browser is closed, it will emit the finished signal.
+            # We can use this to refresh the main dashboard if any changes were made.
+            self.archive_browser.finished.connect(self.refresh_data)
+            self.archive_browser.show()
+        else:
+            self.archive_browser.activateWindow()
 
     def closeEvent(self, event):
         # Clean up any open monitor windows
         for monitor in list(self.race_monitors.values()):
             monitor.close()
+        # Clean up any open log viewers
+        for viewer in list(self.log_viewers.values()):
+            viewer.close()
+        # Clean up the archive browser if it's open
+        if self.archive_browser:
+            self.archive_browser.close()
         super().closeEvent(event)

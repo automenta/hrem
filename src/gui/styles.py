@@ -11,6 +11,7 @@ PALETTE = {
     "accent_green": "#38a169",    # A strong green for success
     "accent_red": "#e53e3e",      # A strong red for errors/danger
     "accent_yellow": "#dd6b20",   # A strong orange/yellow for warnings
+    "accent_orange": "#ed8936",   # A lighter orange for non-fatal errors
     "challenger_color": "#2f855a", # A rich green for the challenger
     "baseline_color": "#2c5282",  # A deep blue for baselines
 }

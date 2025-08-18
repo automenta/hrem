@@ -6,6 +6,7 @@ import os
 STATUS_RUNNING = "Running"
 STATUS_COMPLETED = "Completed"
 STATUS_FAILED = "Failed"
+STATUS_ERROR = "Error"
 STATUS_UNKNOWN = "Unknown"
 
 # --- UI Constants ---

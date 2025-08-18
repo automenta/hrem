@@ -12,6 +12,8 @@ from .constants import (
     BASE_MODELS_DIR,
     RESULTS_DIR,
     STATUS_COMPLETED,
+    STATUS_ERROR,
+    STATUS_FAILED,
     STATUS_RUNNING,
 )
 from .process_manager import BaseProcessManager
@@ -145,8 +147,24 @@ class ExperimentManager(BaseProcessManager):
         statuses = self.get_experiment_statuses()
 
         for exp_name, status in statuses.items():
-            config, _ = self.load_experiment_config(exp_name)
-            results, _ = self.load_experiment_results(exp_name)
+            status_override = None
+            error_message = None
+
+            config, config_err = self.load_experiment_config(exp_name)
+            if config_err:
+                status_override = STATUS_ERROR
+                error_message = config_err
+
+            results, results_err = self.load_experiment_results(exp_name)
+            if results_err:
+                status_override = STATUS_ERROR
+                error_message = results_err
+
+            # A completed experiment should have results. If not, it's an error.
+            if status == STATUS_COMPLETED and not results:
+                status_override = STATUS_ERROR
+                error_message = "Experiment completed, but results.json is missing or empty."
+
 
             # --- Extract data with defaults ---
             model_name = "N/A"
@@ -191,7 +209,7 @@ class ExperimentManager(BaseProcessManager):
             experiments_data.append(
                 {
                     "name": exp_name,
-                    "status": status,
+                    "status": status_override or status,
                     "model": model_name,
                     "dataset": dataset_name,
                     "lr": learning_rate,
@@ -203,6 +221,7 @@ class ExperimentManager(BaseProcessManager):
                     "race_id": race_id,
                     "is_baseline_for": is_baseline_for,
                     "type": exp_type,
+                    "error_message": error_message,
                 }
             )
 
