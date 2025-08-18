@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSplitter, QMessageBox, QDialog, QTextEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QListWidget, QListWidgetItem, QDialogButtonBox,
-    QAbstractItemView
+    QAbstractItemView, QGridLayout, QInputDialog, QFileDialog
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap
@@ -19,6 +19,95 @@ from .combined_race_plot import CombinedRacePlot
 from .utils import flatten_dict
 import os
 
+class MetricAxisSelectorDialog(QDialog):
+    """A dialog to select metrics for left and right Y-axes."""
+    def __init__(self, available_metrics, selected_metrics, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Metrics and Axes")
+        self.setMinimumSize(600, 400)
+
+        layout = QVBoxLayout(self)
+        grid_layout = QGridLayout()
+
+        # Create lists
+        self.available_list = QListWidget()
+        self.available_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.left_axis_list = QListWidget()
+        self.left_axis_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.right_axis_list = QListWidget()
+        self.right_axis_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+
+        # Populate lists
+        left_metrics = selected_metrics.get('left', [])
+        right_metrics = selected_metrics.get('right', [])
+        self.left_axis_list.addItems(sorted(left_metrics))
+        self.right_axis_list.addItems(sorted(right_metrics))
+        assigned_metrics = set(left_metrics) | set(right_metrics)
+        self.available_list.addItems(sorted([m for m in available_metrics if m not in assigned_metrics]))
+
+        # Create move buttons
+        add_to_left_button = QPushButton("Add to Left >>")
+        add_to_left_button.setToolTip("Move selected metrics to the Left Axis plot.")
+        add_to_right_button = QPushButton("Add to Right >>")
+        add_to_right_button.setToolTip("Move selected metrics to the Right Axis plot.")
+        remove_from_left_button = QPushButton("<< Remove")
+        remove_from_left_button.setToolTip("Remove selected metrics from the Left Axis plot.")
+        remove_from_right_button = QPushButton("<< Remove")
+        remove_from_right_button.setToolTip("Remove selected metrics from the Right Axis plot.")
+
+        # Connect signals
+        add_to_left_button.clicked.connect(lambda: self.move_items(self.available_list, self.left_axis_list))
+        add_to_right_button.clicked.connect(lambda: self.move_items(self.available_list, self.right_axis_list))
+        remove_from_left_button.clicked.connect(lambda: self.move_items(self.left_axis_list, self.available_list))
+        remove_from_right_button.clicked.connect(lambda: self.move_items(self.right_axis_list, self.available_list))
+
+        # Layouting
+        grid_layout.addWidget(QLabel("Available Metrics"), 0, 0)
+        self.available_list.setToolTip("Metrics that are not currently being plotted.")
+        grid_layout.addWidget(self.available_list, 1, 0)
+
+        center_layout = QVBoxLayout()
+        center_layout.addStretch()
+        center_layout.addWidget(add_to_left_button)
+        center_layout.addWidget(add_to_right_button)
+        center_layout.addStretch()
+        center_layout.addWidget(remove_from_left_button)
+        center_layout.addWidget(remove_from_right_button)
+        center_layout.addStretch()
+        grid_layout.addLayout(center_layout, 1, 1)
+
+        right_side_layout = QVBoxLayout()
+        right_side_layout.addWidget(QLabel("Left Axis Metrics"))
+        self.left_axis_list.setToolTip("Metrics to plot on the left Y-axis.")
+        right_side_layout.addWidget(self.left_axis_list)
+        right_side_layout.addWidget(QLabel("Right Axis Metrics"))
+        self.right_axis_list.setToolTip("Metrics to plot on the right Y-axis.")
+        right_side_layout.addWidget(self.right_axis_list)
+        grid_layout.addLayout(right_side_layout, 1, 2)
+        grid_layout.setColumnStretch(0, 2)
+        grid_layout.setColumnStretch(2, 2)
+
+
+        layout.addLayout(grid_layout)
+
+        # Dialog buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def move_items(self, source_list, dest_list):
+        for item in source_list.selectedItems():
+            dest_list.addItem(source_list.takeItem(source_list.row(item)))
+        dest_list.sortItems()
+        source_list.sortItems()
+
+    def get_selected_metrics(self):
+        left = [self.left_axis_list.item(i).text() for i in range(self.left_axis_list.count())]
+        right = [self.right_axis_list.item(i).text() for i in range(self.right_axis_list.count())]
+        return {"left": left, "right": right}
+
+
 class RaceMonitor(QMainWindow):
     """
     The main window for monitoring a race.
@@ -33,7 +122,7 @@ class RaceMonitor(QMainWindow):
         self.participant_names = []
         self.plot_data_errors = {}
         self.available_metrics = []
-        self.selected_metrics = ["test_loss"] # Default metric
+        self.selected_metrics = {"left": [], "right": []}
 
         self._init_participants()
         self._init_ui()
@@ -50,45 +139,40 @@ class RaceMonitor(QMainWindow):
 
         self.available_metrics = self.manager.get_available_metrics_for_race(self.participant_names)
         if not self.available_metrics:
-            self.available_metrics = ["test_loss", "train_loss"] # Default fallback
+            self.available_metrics = ["test_loss", "train_loss"]
 
-        if not self.selected_metrics:
-            if "test_loss" in self.available_metrics:
-                self.selected_metrics = ["test_loss"]
-            elif self.available_metrics:
-                self.selected_metrics = [self.available_metrics[0]]
+        # Default selection
+        if "test_loss" in self.available_metrics:
+            self.selected_metrics["left"] = ["test_loss"]
+        elif self.available_metrics:
+            self.selected_metrics["left"] = [self.available_metrics[0]]
 
     def _init_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
 
-        # --- Top Bar: Title and Metric Selector ---
         top_bar_layout = QHBoxLayout()
         title = QLabel(f"<h2>Race: {self.race_info['base_name']}</h2>")
         top_bar_layout.addWidget(title)
         top_bar_layout.addStretch()
 
         top_bar_layout.addWidget(QLabel("Plot Metrics:"))
-        self.select_metrics_button = QPushButton("Select Metrics...")
+        self.select_metrics_button = QPushButton("Select Metrics & Axes...")
         self.select_metrics_button.clicked.connect(self._open_metric_selector)
         top_bar_layout.addWidget(self.select_metrics_button)
         main_layout.addLayout(top_bar_layout)
 
-        # --- Main Splitter: Plot on left, tables on right ---
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter, 1)
 
-        # --- Left side: Combined Plot ---
         self.combined_plot = CombinedRacePlot()
         splitter.addWidget(self.combined_plot)
 
-        # --- Right side: Tables ---
         right_pane = QWidget()
         right_layout = QVBoxLayout(right_pane)
         splitter.addWidget(right_pane)
 
-        # Participant Details Table
         self.details_table = QTableWidget()
         self.details_table.setColumnCount(3)
         self.details_table.setHorizontalHeaderLabels(["Participant", "Config", "Log"])
@@ -98,13 +182,11 @@ class RaceMonitor(QMainWindow):
         self.details_table.cellClicked.connect(self._on_details_table_click)
         right_layout.addWidget(self.details_table)
 
-        # Hyperparameter Table
         self.hparam_table = QTableWidget()
         self.hparam_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.hparam_table.verticalHeader().setVisible(False)
         right_layout.addWidget(self.hparam_table)
 
-        # Summary Table
         self.summary_table = QTableWidget()
         self.summary_table.setColumnCount(4)
         self.summary_table.setHorizontalHeaderLabels(["Participant", "Status", "Latest Test Loss", "Notes"])
@@ -113,9 +195,8 @@ class RaceMonitor(QMainWindow):
         self.summary_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         right_layout.addWidget(self.summary_table)
 
-        splitter.setSizes([700, 500]) # Initial sizing
+        splitter.setSizes([700, 500])
 
-        # --- Bottom Bar: Analysis and Controls ---
         bottom_bar = QHBoxLayout()
         main_layout.addLayout(bottom_bar)
 
@@ -144,42 +225,20 @@ class RaceMonitor(QMainWindow):
     def _start_monitoring(self):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_race_status)
-        self.timer.start(2000)  # Update every 2 seconds
-        self._update_details_table() # Initial population
+        self.timer.start(2000)
+        self._update_details_table()
 
     def _open_metric_selector(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Select Metrics to Plot")
-        layout = QVBoxLayout(dialog)
-
-        list_widget = QListWidget()
-        for metric in self.available_metrics:
-            item = QListWidgetItem(metric)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            check_state = Qt.CheckState.Checked if metric in self.selected_metrics else Qt.CheckState.Unchecked
-            item.setCheckState(check_state)
-            list_widget.addItem(item)
-
-        layout.addWidget(list_widget)
-
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-
+        dialog = MetricAxisSelectorDialog(self.available_metrics, self.selected_metrics, self)
         if dialog.exec():
-            selected = []
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                if item.checkState() == Qt.CheckState.Checked:
-                    selected.append(item.text())
-            self._on_metrics_selected(selected)
+            new_selection = dialog.get_selected_metrics()
+            self._on_metrics_updated(new_selection)
 
-    def _on_metrics_selected(self, new_metrics: list[str]):
-        if not new_metrics:
-            QMessageBox.warning(self, "Selection Error", "Please select at least one metric to plot.")
+    def _on_metrics_updated(self, new_selection: dict):
+        if not new_selection.get('left') and not new_selection.get('right'):
+            QMessageBox.warning(self, "Selection Error", "Please select at least one metric to plot on either axis.")
             return
-        self.selected_metrics = new_metrics
+        self.selected_metrics = new_selection
         self._update_race_status()
 
     def _update_race_status(self):
@@ -187,8 +246,15 @@ class RaceMonitor(QMainWindow):
         statuses = self.manager.get_statuses()
 
         self.combined_plot.clear_plots()
-        title = f"Metrics: {', '.join(self.selected_metrics)}"
-        self.combined_plot.set_title(title)
+
+        # Set labels for axes
+        left_label = ", ".join(self.selected_metrics['left']) or None
+        right_label = ", ".join(self.selected_metrics['right']) or None
+        self.combined_plot.set_labels(left_label=left_label, right_label=right_label)
+
+        # Set title
+        all_metrics = self.selected_metrics['left'] + self.selected_metrics['right']
+        self.combined_plot.set_title(f"Metrics: {', '.join(all_metrics)}")
 
         for name in self.participant_names:
             results_data, error_msg = self.manager.load_experiment_results(name)
@@ -200,12 +266,15 @@ class RaceMonitor(QMainWindow):
                 self.plot_data_errors.pop(name, None)
 
             if results_data:
-                for metric in self.selected_metrics:
+                for metric in self.selected_metrics['left']:
                     self.combined_plot.update_plot(
-                        participant_name=name,
-                        is_challenger=is_challenger,
-                        metric_name=metric,
-                        data=results_data.get(metric, [])
+                        participant_name=name, is_challenger=is_challenger,
+                        metric_name=metric, data=results_data.get(metric, []), axis='left'
+                    )
+                for metric in self.selected_metrics['right']:
+                    self.combined_plot.update_plot(
+                        participant_name=name, is_challenger=is_challenger,
+                        metric_name=metric, data=results_data.get(metric, []), axis='right'
                     )
 
         self._update_hyperparameter_table()
@@ -260,63 +329,45 @@ class RaceMonitor(QMainWindow):
         self.details_table.setRowCount(len(self.participant_names))
         for row, name in enumerate(self.participant_names):
             self.details_table.setItem(row, 0, QTableWidgetItem(name))
-
             view_config_btn = QPushButton("View Config")
             self.details_table.setCellWidget(row, 1, view_config_btn)
-
             view_log_btn = QPushButton("View Log")
             self.details_table.setCellWidget(row, 2, view_log_btn)
 
     def _on_details_table_click(self, row, column):
         participant_name = self.details_table.item(row, 0).text()
-        if column == 1: # View Config
-            self._view_config(participant_name)
-        elif column == 2: # View Log
-            self._view_log(participant_name)
+        if column == 1: self._view_config(participant_name)
+        elif column == 2: self._view_log(participant_name)
 
     def _update_hyperparameter_table(self):
         all_configs = {}
         for name in self.participant_names:
             config, err = self.manager.load_experiment_config(name)
-            if config and not err:
-                all_configs[name] = config
-
+            if config and not err: all_configs[name] = config
         if len(all_configs) < 2:
             self.hparam_table.hide()
             return
-
         diff_params = self._get_differentiating_hparams(all_configs)
         if not diff_params:
             self.hparam_table.hide()
             return
-
         self.hparam_table.show()
         self.hparam_table.setRowCount(len(diff_params))
         self.hparam_table.setColumnCount(len(self.participant_names) + 1)
         self.hparam_table.setHorizontalHeaderLabels(["Hyperparameter"] + self.participant_names)
-
         for row, param_key in enumerate(diff_params):
             self.hparam_table.setItem(row, 0, QTableWidgetItem(param_key))
-            flat_configs = {name: self._flatten_dict(cfg) for name, cfg in all_configs.items()}
+            flat_configs = {name: flatten_dict(cfg) for name, cfg in all_configs.items()}
             for col, p_name in enumerate(self.participant_names, 1):
                 value = flat_configs.get(p_name, {}).get(param_key, "N/A")
                 self.hparam_table.setItem(row, col, QTableWidgetItem(str(value)))
-
         self.hparam_table.resizeColumnsToContents()
 
     def _get_differentiating_hparams(self, all_configs: dict[str, dict]) -> list[str]:
         if not all_configs or len(all_configs) < 2: return []
-
-        # Define keys to ignore during diff
         ignored_keys = {"experiment_name", "race_id", "is_baseline_for", "notes", "parent_experiment"}
-
         flat_configs = {name: flatten_dict(cfg) for name, cfg in all_configs.items()}
-
-        # Get all unique keys across all configs, excluding ignored ones
-        all_keys = set()
-        for cfg in flat_configs.values():
-            all_keys.update(k for k in cfg.keys() if k not in ignored_keys)
-
+        all_keys = set().union(*(cfg.keys() for cfg in flat_configs.values())) - ignored_keys
         diff_keys = []
         config_names = list(flat_configs.keys())
         for key in sorted(list(all_keys)):

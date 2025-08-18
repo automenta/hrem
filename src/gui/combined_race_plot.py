@@ -4,24 +4,43 @@ from PyQt6.QtGui import QColor
 class CombinedRacePlot(pg.PlotWidget):
     """
     A specialized PlotWidget for displaying multiple race participants' metrics
-    on a single graph for easy comparison.
+    on a single graph for easy comparison. Supports dual Y-axes.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.legend = None
         self.participant_pens = {}
-        self.plot_items = {}
+        self.plot_items_left = {}
+        self.plot_items_right = {}
 
-        # Use a dark theme for better aesthetics
         self.setBackground('w')
-        self.showGrid(x=True, y=True, alpha=0.3)
-        self.getAxis('left').setTextPen('k')
-        self.getAxis('bottom').setTextPen('k')
+        self.plot_item = self.getPlotItem()
+        self.plot_item.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_item.getAxis('left').setTextPen('k')
+        self.plot_item.getAxis('bottom').setTextPen('k')
+
+        # Create a new ViewBox for the right axis
+        self.view_box_right = pg.ViewBox()
+        self.plot_item.scene().addItem(self.view_box_right)
+        self.plot_item.getAxis('right').linkToView(self.view_box_right)
+        self.view_box_right.setXLink(self.plot_item)
+        self.plot_item.getAxis('right').setTextPen('k') # Style the new axis
 
         self._setup_legend()
 
+        # Update the bounds of the right view box whenever the main view box changes
+        self.plot_item.vb.sigResized.connect(self._update_right_view_box)
+
+    def _update_right_view_box(self):
+        """Ensures the right-side viewbox is aligned with the main one."""
+        self.view_box_right.setGeometry(self.plot_item.vb.sceneBoundingRect())
+        self.view_box_right.linkedViewChanged(self.plot_item.vb, self.view_box_right.XAxis)
+
     def _setup_legend(self):
         """Initializes and styles the legend."""
+        if self.legend:
+            # Remove the old legend if it exists, to prevent duplicates
+            self.legend.scene().removeItem(self.legend)
         self.legend = self.addLegend(labelTextColor='k', brush=QColor(255, 255, 255, 150))
 
     def _get_pen(self, participant_name: str, is_challenger: bool):
@@ -33,35 +52,19 @@ class CombinedRacePlot(pg.PlotWidget):
             if is_challenger:
                 color = pg.mkColor('#00A000') # Vibrant Green
             else:
-                # Cycle through a list of nice, distinct colors for baselines
                 baseline_colors = [
-                    '#1f77b4',  # Muted Blue
-                    '#ff7f0e',  # Safety Orange
-                    '#d62728',  # Brick Red
-                    '#9467bd',  # Muted Purple
-                    '#8c564b',  # Chestnut Brown
-                    '#e377c2',  # Raspberry Pink
-                    '#7f7f7f',  # Middle Gray
-                    '#bcbd22',  # Curry Yellow-Green
-                    '#17becf',  # Blue-Cyan
+                    '#1f77b4', '#ff7f0e', '#d62728', '#9467bd',
+                    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
                 ]
-                # Assign a color based on the number of baselines already present
                 num_baselines = len([p for p in self.participant_pens if 'challenger' not in p])
                 color = pg.mkColor(baseline_colors[num_baselines % len(baseline_colors)])
 
             self.participant_pens[participant_name] = pg.mkPen(color, width=3)
-
         return self.participant_pens[participant_name]
 
-    def update_plot(self, participant_name: str, is_challenger: bool, metric_name: str, data: list):
+    def update_plot(self, participant_name: str, is_challenger: bool, metric_name: str, data: list, axis: str = 'left'):
         """
-        Updates or adds a single line on the plot.
-
-        Args:
-            participant_name: The name of the experiment participant.
-            is_challenger: Boolean indicating if this is the main challenger.
-            metric_name: The name of the metric being plotted (e.g., 'test_loss').
-            data: A list of numerical values for the y-axis.
+        Updates or adds a single line on the plot, assigning it to the correct axis.
         """
         if not data:
             return
@@ -70,29 +73,57 @@ class CombinedRacePlot(pg.PlotWidget):
         plot_key = f"{participant_name}_{metric_name}"
         legend_name = f"{participant_name} ({metric_name})"
 
-        if plot_key in self.plot_items:
-            # Data exists, update it
-            self.plot_items[plot_key].setData(data)
+        plot_items_dict = self.plot_items_left if axis == 'left' else self.plot_items_right
+
+        if plot_key in plot_items_dict:
+            plot_items_dict[plot_key].setData(data)
         else:
-            # First time plotting this data, create a new plot item
-            plot_item = self.plot(data, pen=pen, name=legend_name)
-            self.plot_items[plot_key] = plot_item
+            plot_item = pg.PlotDataItem(data, pen=pen, name=legend_name)
+            if axis == 'right':
+                self.view_box_right.addItem(plot_item)
+            else:
+                self.plot_item.addItem(plot_item)
+
+            # Manually add to legend to ensure all items appear
+            if self.legend:
+                self.legend.addItem(plot_item, name=legend_name)
+
+            plot_items_dict[plot_key] = plot_item
 
     def clear_plots(self):
         """
-        Clears all plotted lines and resets the stored plot items,
-        but keeps the pen assignments for color consistency.
+        Clears all plotted lines from both axes and resets the plot.
         """
-        self.clear()
-        self.plot_items = {}
-        # Re-add the legend after clearing
+        # Remove items from the legend and the plot
+        if self.legend:
+            for item in self.plot_items_left.values():
+                self.legend.removeItem(item.name())
+            for item in self.plot_items_right.values():
+                self.legend.removeItem(item.name())
+
+        # Remove items from their respective views
+        for item in self.plot_items_left.values():
+            self.plot_item.removeItem(item)
+        for item in self.plot_items_right.values():
+            self.view_box_right.removeItem(item)
+
+        self.plot_items_left = {}
+        self.plot_items_right = {}
+
+        # Reset the legend completely
         self._setup_legend()
 
     def set_title(self, title: str):
         """Sets the plot title with appropriate styling."""
         self.setTitle(title, color='k', size='14pt')
 
-    def set_labels(self, left_label: str = 'Metric Value', bottom_label: str = 'Epoch'):
+    def set_labels(self, left_label: str = 'Metric Value', right_label: str = None, bottom_label: str = 'Epoch'):
         """Sets the axis labels with appropriate styling."""
         self.setLabel('left', left_label)
         self.setLabel('bottom', bottom_label)
+        if right_label:
+            self.getAxis('right').show()
+            self.setLabel('right', right_label)
+        else:
+            self.getAxis('right').hide()
+            self.view_box_right.clear() # Clear the view if not in use
