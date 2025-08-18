@@ -96,8 +96,11 @@ def test_launch_experiment_race(mock_launch, temp_experiment_dirs):
         "dataset": "test_dataset",
     }
 
-    success, msg = manager.launch_experiment_race(launch_info)
-    assert success
+    # Consume the generator to execute the launch
+    results = list(manager.launch_experiment_race(launch_info))
+    # The last yielded item should be the success signal
+    final_status, final_data = results[-1]
+    assert final_status == "success"
 
     # Check that challenger and baseline directories were created
     challenger_dir = os.path.join(results_dir, "my_race_challenger")

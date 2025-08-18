@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import time
 import uuid
 from datetime import datetime
 
@@ -241,6 +242,82 @@ class ExperimentManager(BaseProcessManager):
 
         return completed_races
 
+    def get_all_races_summary(self) -> list:
+        """
+        Gathers data for all races (running or complete) and provides a summary.
+        """
+        all_experiments = self.get_experiments_data()
+        races = {}
+        for exp in all_experiments:
+            race_id = exp.get("race_id")
+            if not race_id or race_id == "N/A":
+                continue
+
+            if race_id not in races:
+                races[race_id] = {
+                    "race_id": race_id,
+                    "participants": [],
+                    "status": STATUS_COMPLETED, # Assume complete until proven otherwise
+                    "created_at": None,
+                    "challenger": "N/A",
+                    "baselines": [],
+                    "base_name": "N/A"
+                }
+
+            # Update race status if any participant is running
+            if exp["status"] == STATUS_RUNNING:
+                races[race_id]["status"] = STATUS_RUNNING
+
+            # Set created_at to the earliest time found
+            try:
+                exp_time = datetime.strptime(exp["created"], "%Y-%m-%d %H:%M")
+                if races[race_id]["created_at"] is None or exp_time < races[race_id]["created_at"]:
+                    races[race_id]["created_at"] = exp_time
+            except (ValueError, TypeError):
+                pass # Ignore if date is invalid
+
+            # Identify challenger and baselines
+            if exp["name"].endswith("_challenger"):
+                races[race_id]["challenger"] = exp["model"]
+                # Infer base_name from challenger
+                races[race_id]["base_name"] = exp["name"].replace("_challenger", "")
+
+            elif "_baseline_" in exp["name"]:
+                races[race_id]["baselines"].append(exp["model"])
+
+            races[race_id]["participants"].append(exp)
+
+        # Convert created_at to string
+        for race in races.values():
+            if race["created_at"]:
+                race["created_at"] = race["created_at"].strftime("%Y-%m-%d %H:%M")
+
+        return sorted(races.values(), key=lambda r: r.get("created_at") or "", reverse=True)
+
+    def get_race_info(self, race_id: str) -> dict | None:
+        """
+        Constructs the 'launch_info' dictionary for an existing race,
+        which is needed to open the RaceMonitor.
+        """
+        race_summary = next((r for r in self.get_all_races_summary() if r["race_id"] == race_id), None)
+        if not race_summary:
+            return None
+
+        # Find the original challenger config from its experiment directory
+        challenger_exp_name = f"{race_summary['base_name']}_challenger"
+        config, err = self.load_experiment_config(challenger_exp_name)
+        if err or not config:
+            return None # Cannot reconstruct without challenger config
+
+        launch_info = {
+            "base_name": race_summary["base_name"],
+            "challenger_config": config,
+            "baselines": race_summary["baselines"],
+            "dataset": config.get("dataset", {}).get("name", "N/A"),
+            "notes": config.get("notes", "")
+        }
+        return launch_info
+
     def archive_experiment(self, exp_name: str) -> (bool, str):
         """
         Moves an experiment's directory to the archive folder.
@@ -477,11 +554,13 @@ class ExperimentManager(BaseProcessManager):
 
     def launch_experiment_race(self, launch_info: dict):
         """
-        Launches a "race" of experiments: a challenger against multiple baselines.
-        Returns a tuple: (success: bool, message: str | list)
-        - On critical failure, returns (False, "error message").
-        - On success, returns (True, list_of_baseline_failures). The list is
-          empty if all baselines launched successfully.
+        Generator that launches a race, yielding progress updates.
+
+        Yields:
+            A tuple (type, data).
+            - ('progress', message: str)
+            - ('error', message: str)
+            - ('success', baseline_failures: list)
         """
         race_id = str(uuid.uuid4())[:8]
         base_name = launch_info["base_name"]
@@ -494,25 +573,28 @@ class ExperimentManager(BaseProcessManager):
 
         # 1. Load common dataset config
         try:
+            yield "progress", f"Loading dataset config: {dataset_name}..."
+            time.sleep(0.1)
             dataset_config_path = os.path.join(
                 BASE_DATASETS_DIR, f"{dataset_name}.json"
             )
             dataset_config = ConfigFactory.parse_file(dataset_config_path)
         except Exception as e:
-            return False, f"Failed to load dataset config '{dataset_name}': {e}"
+            yield "error", f"Failed to load dataset config '{dataset_name}': {e}"
+            return
 
         # 2. Load and configure challenger
         try:
+            yield "progress", "Configuring challenger model..."
+            time.sleep(0.1)
             if isinstance(challenger_config, dict):
-                # Config is already a dictionary (from ConfigEditor)
                 challenger_config = ConfigFactory.from_dict(challenger_config)
             else:
-                # Assume it's a file path
                 challenger_config = ConfigFactory.parse_file(challenger_config)
         except Exception as e:
-            return False, f"Failed to load or parse challenger config: {e}"
+            yield "error", f"Failed to load or parse challenger config: {e}"
+            return
 
-        # --- Apply overrides to the main challenger config ---
         # a. Set the dataset
         challenger_config.put("dataset", dataset_config)
 
@@ -529,28 +611,29 @@ class ExperimentManager(BaseProcessManager):
             challenger_config.put("notes", notes)
 
         try:
+            yield "progress", f"Launching challenger: {challenger_exp_name}..."
+            time.sleep(0.1)
             self._prepare_and_launch_exp(challenger_exp_name, challenger_config, "main.py")
         except Exception as e:
-            return False, f"Failed to launch challenger '{challenger_exp_name}': {e}"
+            yield "error", f"Failed to launch challenger '{challenger_exp_name}': {e}"
+            return
 
         # 4. Prepare and launch baseline experiments
-        for baseline_model_name in baseline_models:
+        for i, baseline_model_name in enumerate(baseline_models):
             baseline_exp_name = f"{base_name}_baseline_{baseline_model_name}"
             try:
-                # Create a new config for the baseline, using parts from the
-                # (now fully configured) challenger config.
+                yield "progress", f"Launching baseline {i+1}/{len(baseline_models)}: {baseline_model_name}..."
+                time.sleep(0.1)
                 baseline_config = ConfigTree()
                 baseline_config.put("training", challenger_config.get("training"))
                 baseline_config.put("dataset", challenger_config.get("dataset"))
 
-                # Load the base model config
                 base_model_config_path = os.path.join(
                     BASE_MODELS_DIR, f"{baseline_model_name}.json"
                 )
                 base_model_config = ConfigFactory.parse_file(base_model_config_path)
                 baseline_config.put("model", base_model_config)
 
-                # Add metadata
                 baseline_config.put("experiment_name", baseline_exp_name)
                 baseline_config.put("race_id", race_id)
                 baseline_config.put("is_baseline_for", challenger_exp_name)
@@ -564,7 +647,9 @@ class ExperimentManager(BaseProcessManager):
                 baseline_failures.append(failure_msg)
                 continue
 
-        return True, baseline_failures
+        yield "progress", "All experiments launched!"
+        time.sleep(0.2)
+        yield "success", baseline_failures
 
     def _prepare_and_launch_exp(self, exp_name: str, config: dict, script_to_run: str):
         """

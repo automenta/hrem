@@ -138,17 +138,7 @@ class RaceMonitor(QMainWindow):
 
         if not is_race_running:
             self.timer.stop()
-            self.stop_button.setText("Close")
-            try:
-                self.stop_button.clicked.disconnect(self._stop_race)
-            except TypeError:
-                pass # Already disconnected
-            try:
-                self.stop_button.clicked.disconnect(self.close)
-            except TypeError:
-                pass
-            self.stop_button.clicked.connect(self.close)
-            self.stop_button.setEnabled(True)
+            self._set_button_to_close()
 
 
     def _update_summary(self, statuses: dict):
@@ -230,11 +220,34 @@ class RaceMonitor(QMainWindow):
             plot_widget.plot(test_loss, pen='r', name="Test Loss")
 
     def _stop_race(self):
+        """Stops all running experiments and the monitoring timer."""
+        reply = QMessageBox.question(
+            self,
+            "Confirm Stop",
+            "Are you sure you want to stop all experiments in this race?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.No:
+            return
+
         for name in self.participant_names:
             self.manager.stop_experiment(name, force=True)
+
         self.timer.stop()
-        self.stop_button.setEnabled(False)
-        self.stop_button.setText("Race Stopped")
+        self._set_button_to_close()
+
+    def _set_button_to_close(self):
+        """Changes the main button's function to simply close the window."""
+        self.stop_button.setText("Close")
+        self.stop_button.setEnabled(True)
+        # Disconnect all previous connections to be safe
+        try:
+            self.stop_button.clicked.disconnect()
+        except TypeError:
+            pass  # No connections to disconnect
+        self.stop_button.clicked.connect(self.close)
 
     def closeEvent(self, event):
         # Only stop processes if they are still running

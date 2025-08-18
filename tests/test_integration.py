@@ -108,8 +108,11 @@ def test_full_experiment_lifecycle(mock_popen, temp_integration_env):
         "baselines": ["baseline"],
         "dataset": "test_dataset",  # Added dataset for the race
     }
-    success, msg = manager.launch_experiment_race(launch_info)
-    assert success, f"Failed to launch experiment race: {msg}"
+    # Consume the generator to execute the launch
+    results = list(manager.launch_experiment_race(launch_info))
+    # The last yielded item should be the success signal
+    final_status, final_data = results[-1]
+    assert final_status == "success", f"Race launch failed: {final_data}"
 
     # Verify that the processes were "launched"
     assert (

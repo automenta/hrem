@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from .config_editor import ConfigEditor
-from .constants import CONFIGS_DIR, BASE_MODELS_DIR, BASE_DATASETS_DIR
+from .constants import CONFIGS_DIR, BASE_MODELS_DIR, BASE_DATASETS_DIR, RESULTS_DIR
 
 class RaceLauncher(QDialog):
     """
@@ -173,6 +173,17 @@ import json
                 self,
                 "Validation Error",
                 "Race Name can only contain letters, numbers, underscores, and hyphens.",
+            )
+            return
+
+        # Check for race name collision
+        challenger_exp_name = f"{name}_challenger"
+        if os.path.exists(os.path.join(RESULTS_DIR, challenger_exp_name)):
+            QMessageBox.warning(
+                self,
+                "Validation Error",
+                f"A race with the base name '{name}' already exists.\n"
+                f"Please choose a different name.",
             )
             return
 
