@@ -20,13 +20,13 @@ class ConfigEditor(QDialog):
     """
     A dialog for viewing and editing experiment configurations.
     """
-    def __init__(self, config: dict, parent=None, is_read_only=False):
+    def __init__(self, config: dict, parent=None, is_read_only=False, visible_sections=None):
         super().__init__(parent)
         self.is_read_only = is_read_only
         self.setWindowTitle("Configuration Editor")
         self.setMinimumWidth(500)
 
-        self.visible_sections = ["model", "dataset", "training"]
+        self.visible_sections = visible_sections if visible_sections is not None else ["model", "dataset", "training"]
         self.config = config
 
         self._init_ui()
@@ -146,11 +146,6 @@ class ConfigEditor(QDialog):
 
                 layout.addRow(f"{name}:", widget)
 
-    def _on_accept(self):
-        """Handle the OK button click, performing validation first."""
-        if self._validate_config():
-            self.accept()
-
     def _validate_and_build_config(self):
         """
         Builds the config dict from the UI while validating field types.
@@ -163,32 +158,54 @@ class ConfigEditor(QDialog):
         }
 
         # Validate Model
-        model_class = MODEL_REGISTRY.get(config["model"]["name"])
-        config["model"]["params"] = self._build_validated_params(
-            "Model", self.model_params_layout, model_class
-        )
+        if self.model_group.isVisible():
+            model_class = MODEL_REGISTRY.get(config["model"]["name"])
+            config["model"]["params"] = self._build_validated_params(
+                "Model", self.model_params_layout, model_class
+            )
 
         # Validate Dataset
-        dataset_class = DATASET_REGISTRY.get(config["dataset"]["name"])
-        config["dataset"]["params"] = self._build_validated_params(
-            "Dataset", self.dataset_params_layout, dataset_class
-        )
+        if self.dataset_group.isVisible():
+            dataset_class = DATASET_REGISTRY.get(config["dataset"]["name"])
+            config["dataset"]["params"] = self._build_validated_params(
+                "Dataset", self.dataset_params_layout, dataset_class
+            )
 
-        # Validate Training - manually since it's not dynamic
-        try:
-            training_params = {}
-            epochs_text = self.training_params_layout.itemAt(1).widget().text()
-            training_params["epochs"] = int(epochs_text)
-            batch_text = self.training_params_layout.itemAt(3).widget().text()
-            training_params["batch_size"] = int(batch_text)
-            lr_text = self.training_params_layout.itemAt(5).widget().text()
-            training_params["learning_rate"] = float(lr_text)
-            config["training"] = training_params
-        except (ValueError, TypeError) as e:
-            raise ValueError(f"Invalid value in Training section: {e}") from e
+        # Validate Training
+        if self.training_group.isVisible():
+            config["training"] = self._validate_training_params()
 
         return config
 
+    def _validate_training_params(self):
+        """
+        Validates the training parameters from their QFormLayout.
+        Raises ValueError on failure.
+        """
+        params = {}
+        layout = self.training_params_layout
+        expected_types = {"epochs": int, "batch_size": int, "learning_rate": float}
+
+        for i in range(layout.rowCount()):
+            label_item = layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+            field_item = layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
+
+            if not label_item or not field_item or not label_item.widget() or not field_item.widget():
+                continue # Skip malformed rows
+
+            label_widget = label_item.widget()
+            field_widget = field_item.widget()
+            param_name_key = label_widget.text().replace(":", "").lower().replace(" ", "_")
+
+            if param_name_key in expected_types and isinstance(field_widget, QLineEdit):
+                value_str = field_widget.text()
+                try:
+                    params[param_name_key] = expected_types[param_name_key](value_str)
+                except (ValueError, TypeError) as e:
+                    raise ValueError(
+                        f"Invalid value for '{label_widget.text()}' in Training section."
+                    ) from e
+        return params
 
     def _build_validated_params(self, section_name, layout, component_class):
         params_dict = {}
@@ -199,8 +216,15 @@ class ConfigEditor(QDialog):
         param_defs = sig.parameters
 
         for i in range(layout.rowCount()):
-            label_widget = layout.itemAt(i, QFormLayout.ItemRole.LabelRole).widget()
-            field_widget = layout.itemAt(i, QFormLayout.ItemRole.FieldRole).widget()
+            label_item = layout.itemAt(i, QFormLayout.ItemRole.LabelRole)
+            field_item = layout.itemAt(i, QFormLayout.ItemRole.FieldRole)
+
+            # Defensive check to prevent crashes on malformed layout
+            if not label_item or not field_item or not label_item.widget() or not field_item.widget():
+                continue
+
+            label_widget = label_item.widget()
+            field_widget = field_item.widget()
 
             param_name_text = label_widget.text().replace(":", "")
             param_name_key = param_name_text.lower().replace(" ", "_")
