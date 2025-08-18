@@ -1,5 +1,6 @@
 import os
 import re
+import json
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QCheckBox,
+    QInputDialog,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -29,8 +31,6 @@ class RaceLauncher(QDialog):
     # Signal to emit the launch info dictionary
     launch_info_ready = pyqtSignal(dict)
 
-import json
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Launch New Race")
@@ -39,6 +39,7 @@ import json
 
         self.challenger_config_path = None
         self.challenger_config_data = None
+        self.launch_info = None # Will be populated on accept
         self._init_ui()
 
     def _init_ui(self):
@@ -68,13 +69,18 @@ import json
         challenger_layout = QVBoxLayout(challenger_group)
         challenger_file_layout = QHBoxLayout()
         self.challenger_label = QLabel("No file selected...")
-        self.select_challenger_button = QPushButton("Select Config...")
+        self.new_challenger_button = QPushButton("New...")
+        self.new_challenger_button.setToolTip("Create a new challenger config from a baseline template")
+        self.new_challenger_button.clicked.connect(self._create_new_challenger)
+        self.select_challenger_button = QPushButton("Select...")
+        self.select_challenger_button.setToolTip("Select an existing challenger config file")
         self.select_challenger_button.clicked.connect(self._select_challenger)
         self.edit_challenger_button = QPushButton("View/Edit...")
         self.edit_challenger_button.clicked.connect(self._edit_challenger)
         self.edit_challenger_button.setEnabled(False) # Disabled until a file is chosen
         challenger_file_layout.addWidget(self.challenger_label)
         challenger_file_layout.addStretch()
+        challenger_file_layout.addWidget(self.new_challenger_button)
         challenger_file_layout.addWidget(self.select_challenger_button)
         challenger_file_layout.addWidget(self.edit_challenger_button)
         challenger_layout.addLayout(challenger_file_layout)
@@ -112,6 +118,37 @@ import json
         button_box.addWidget(self.cancel_button)
         button_box.addWidget(self.launch_button)
         layout.addLayout(button_box)
+
+    def _create_new_challenger(self):
+        baselines = self._get_available_config_names(BASE_MODELS_DIR)
+        if not baselines:
+            QMessageBox.warning(self, "No Templates", "No baseline model configs found to use as templates.")
+            return
+
+        baseline_name, ok = QInputDialog.getItem(
+            self, "Create New Challenger", "Select a template:", baselines, 0, False
+        )
+
+        if ok and baseline_name:
+            template_path = os.path.join(BASE_MODELS_DIR, f"{baseline_name}.json")
+            try:
+                with open(template_path, "r") as f:
+                    config_data = json.load(f)
+
+                # Open the editor with this template data
+                editor = ConfigEditor(config_data, self, is_read_only=False)
+                editor.setWindowTitle(f"New Challenger (from {baseline_name})")
+                if editor.exec():
+                    self.challenger_config_data = editor.get_config()
+                    self.challenger_config_path = None # It's an unsaved, custom config
+                    self.challenger_label.setText("Unsaved Custom Challenger*")
+                    self.edit_challenger_button.setEnabled(True)
+
+            except (json.JSONDecodeError, IOError) as e:
+                QMessageBox.critical(
+                    self, "Error Reading Template", f"Could not read or parse the template file:\n{e}"
+                )
+
 
     def _select_challenger(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -217,5 +254,6 @@ import json
         if notes:
              launch_info["notes"] = notes
 
+        self.launch_info = launch_info
         self.launch_info_ready.emit(launch_info)
         self.accept()

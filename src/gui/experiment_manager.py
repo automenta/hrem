@@ -620,23 +620,34 @@ class ExperimentManager(BaseProcessManager):
         except Exception as e:
             return False, f"Failed to launch search {exp_name}: {e}"
 
-    def get_plottable_metrics(self):
+    def get_available_metrics_for_race(self, participant_names: list) -> list[str]:
         """
-        Returns a list of metrics that can be used for plotting in the analysis view.
-        This includes a mix of flattened config keys and result metrics.
+        Inspects the results of all participants in a race and returns a
+        unified list of available metrics to plot (i.e., keys that map to lists of numbers).
         """
-        # This can be expanded or made dynamic in the future
-        return sorted(
-            [
-                "results.final_loss",
-                "results.params",
-                "results.epoch_time",
-                "config.training.learning_rate",
-                "config.training.batch_size",
-                "config.model.params.hidden_dim",
-                "config.model.params.n_layers",
-            ]
-        )
+        all_metrics = set()
+        for name in participant_names:
+            results_data, _ = self.load_experiment_results(name)
+            if not results_data:
+                continue
+
+            for key, value in results_data.items():
+                # A plottable metric is a non-empty list of numbers (int or float)
+                if (isinstance(value, list) and value and
+                    all(isinstance(i, (int, float)) for i in value)):
+                    all_metrics.add(key)
+
+        # Ensure standard metrics are ordered first
+        ordered_metrics = []
+        if "train_loss" in all_metrics:
+            ordered_metrics.append("train_loss")
+            all_metrics.remove("train_loss")
+        if "test_loss" in all_metrics:
+            ordered_metrics.append("test_loss")
+            all_metrics.remove("test_loss")
+
+        ordered_metrics.extend(sorted(list(all_metrics)))
+        return ordered_metrics
 
     def get_log_contents(self, exp_name: str) -> str:
         """

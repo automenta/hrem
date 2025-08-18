@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSplitter, QMessageBox, QDialog, QTextEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView,
+    QHeaderView, QComboBox,
 )
 from PyQt6.QtCore import Qt, QTimer
 import pyqtgraph as pg
@@ -24,32 +24,60 @@ class RaceMonitor(QMainWindow):
         self.participant_widgets = {}  # Will store {name: {'container': QWidget, 'plot': pg.PlotWidget, 'error_label': QLabel}}
         self.participant_names = []
         self.plot_data_errors = {} # Will store {name: "error message"}
+        self.available_metrics = []
+        self.current_metric = "test_loss" # Default metric
 
+        self._init_participants()
         self._init_ui()
         self._start_monitoring()
+
+    def _init_participants(self):
+        """Determine participant names and available metrics."""
+        challenger_name = f"{self.race_info['base_name']}_challenger"
+        self.participant_names.append(challenger_name)
+
+        for baseline_model in self.race_info['baselines']:
+            baseline_name = f"{self.race_info['base_name']}_baseline_{baseline_model}"
+            self.participant_names.append(baseline_name)
+
+        self.available_metrics = self.manager.get_available_metrics_for_race(self.participant_names)
+        if not self.available_metrics:
+            self.available_metrics = ["test_loss", "train_loss"] # Default fallback
+
+        if "test_loss" in self.available_metrics:
+            self.current_metric = "test_loss"
+        elif self.available_metrics:
+            self.current_metric = self.available_metrics[0]
+
 
     def _init_ui(self):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
 
-        # Title
+        # --- Top Bar: Title and Metric Selector ---
+        top_bar_layout = QHBoxLayout()
         title = QLabel(f"<h2>Race: {self.race_info['base_name']}</h2>")
-        main_layout.addWidget(title)
+        top_bar_layout.addWidget(title)
+        top_bar_layout.addStretch()
+
+        top_bar_layout.addWidget(QLabel("Plot Metric:"))
+        self.metric_selector = QComboBox()
+        self.metric_selector.addItems(self.available_metrics)
+        self.metric_selector.setCurrentText(self.current_metric)
+        self.metric_selector.currentTextChanged.connect(self._on_metric_changed)
+        top_bar_layout.addWidget(self.metric_selector)
+        main_layout.addLayout(top_bar_layout)
+
 
         # Main splitter for plots
         self.plot_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.plot_splitter, 1) # Give it stretch factor
 
         # Create a plot for the challenger and each baseline
-        challenger_name = f"{self.race_info['base_name']}_challenger"
-        self.participant_names.append(challenger_name)
-        self._create_participant_plot(challenger_name, is_challenger=True)
-
-        for baseline_model in self.race_info['baselines']:
-            baseline_name = f"{self.race_info['base_name']}_{baseline_model}"
-            self.participant_names.append(baseline_name)
-            self._create_participant_plot(baseline_name)
+        self._create_participant_plot(self.participant_names[0], is_challenger=True)
+        for participant_name in self.participant_names[1:]:
+            self._create_participant_plot(participant_name)
 
         # Summary Table
         self.summary_table = QTableWidget()
@@ -116,6 +144,12 @@ class RaceMonitor(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._update_race_status)
         self.timer.start(2000)  # Update every 2 seconds
+
+    def _on_metric_changed(self, new_metric: str):
+        """Handle the user selecting a new metric to plot."""
+        self.current_metric = new_metric
+        # Trigger a full update to redraw plots with the new metric
+        self._update_race_status()
 
     def _update_race_status(self):
         self.manager.update_log_files()
@@ -217,17 +251,27 @@ class RaceMonitor(QMainWindow):
         error_label.hide()
         plot_widget.show()
         plot_widget.clear()
+        plot_widget.setLabel('bottom', 'Epoch')
+        plot_widget.setLabel('left', self.current_metric)
+        plot_widget.setTitle(f"{self.current_metric} vs. Epoch")
+
 
         if not results_data:
+            plot_widget.addLegend() # Show legend even if empty
             return # No data to plot yet
 
-        train_loss = results_data.get("train_loss", [])
-        test_loss = results_data.get("test_loss", [])
+        # Generic plotting for the selected metric
+        metric_data = results_data.get(self.current_metric, [])
+        if metric_data:
+            plot_widget.plot(metric_data, pen='b', name=self.current_metric)
 
-        if train_loss:
-            plot_widget.plot(train_loss, pen='b', name="Train Loss")
-        if test_loss:
-            plot_widget.plot(test_loss, pen='r', name="Test Loss")
+        # Special handling for "loss" to also plot train_loss if available
+        if "loss" in self.current_metric and self.current_metric != "train_loss":
+            train_loss_data = results_data.get("train_loss", [])
+            if train_loss_data:
+                plot_widget.plot(train_loss_data, pen='r', name="train_loss")
+
+        plot_widget.addLegend()
 
     def _stop_race(self):
         for name in self.participant_names:
